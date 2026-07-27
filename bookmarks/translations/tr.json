@@ -1,0 +1,25 @@
+{
+  "new_bookmark": "Yeni Yer İmi",
+  "edit_bookmark": "Yer İmini Düzenle",
+  "edit_tooltip": "Düzenle",
+  "delete_tooltip": "Sil",
+  "cancel_button": "İptal",
+  "save_button": "Kaydet",
+  "glyph_field": "Sembol (ör. bookmark)",
+  "label_field": "İsim etiketi",
+  "cmd_field": "Shell Komutu",
+  "settings": {
+    "glyph": {
+      "label": "Sembol",
+      "description": "Bar aracının sembolü (ör. bookmark)"
+    },
+    "tooltip": {
+      "label": "İsim etiketi",
+      "description": "Bar aracının isim etiketi"
+    },
+    "text": {
+      "label": "Yazı",
+      "description": "Bar aracının etiketi. Barda sadece sembolün görünmesi için boş bırakın."
+    }
+  }
+}

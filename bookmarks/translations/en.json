@@ -1,0 +1,25 @@
+{
+  "new_bookmark": "New Bookmark",
+  "edit_bookmark": "Edit Bookmark",
+  "edit_tooltip": "Edit",
+  "delete_tooltip": "Delete",
+  "cancel_button": "Cancel",
+  "save_button": "Save",
+  "glyph_field": "Glyph name (e.g. bookmark)",
+  "label_field": "Label",
+  "cmd_field": "Shell command",
+  "settings": {
+    "glyph": {
+      "label": "Glyph",
+      "description": "Bar widget's glyph"
+    },
+    "tooltip": {
+      "label": "Tooltip",
+      "description": "Bar widget's tooltip"
+    },
+    "text": {
+      "label": "Text",
+      "description": "Bar widget's label. Leave empty to display only the glyph."
+    }
+  }
+}
