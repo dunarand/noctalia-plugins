@@ -9,6 +9,8 @@
   "back_button": "Geri",
   "edit_tooltip": "Düzenle",
   "delete_tooltip": "Sil",
+  "move_up_tooltip": "Move up",
+  "move_down_tooltip": "Move down",
   "cancel_button": "İptal",
   "save_button": "Kaydet",
   "glyph_field": "Sembol (ör. bookmark)",
