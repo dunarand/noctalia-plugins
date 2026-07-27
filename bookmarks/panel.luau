@@ -56,13 +56,13 @@ local function loadBookmarks()
 	local raw, readErr = noctalia.readFile(path)
 	if raw == nil then
 		bookmarks = {}
-		listError = "Failed to read bookmarks: " .. tostring(readErr)
+		listError = noctalia.tr("err_read_failed", { error = tostring(readErr) })
 		return
 	end
 	local decoded, decodeErr = noctalia.json.decode(raw)
 	if type(decoded) ~= "table" then
 		bookmarks = {}
-		listError = "Bookmarks file is corrupt: " .. tostring(decodeErr)
+		listError = noctalia.tr("err_corrupt", { error = tostring(decodeErr) })
 		return
 	end
 	bookmarks = decoded
@@ -71,7 +71,7 @@ end
 
 local function saveBookmarks()
 	if path == nil then
-		return false, "No data directory available"
+		return false, noctalia.tr("err_no_data_dir")
 	end
 	local encoded, encodeErr = noctalia.json.encode(bookmarks)
 	if encoded == nil then
@@ -96,26 +96,13 @@ local function moveEntry(list, index, direction)
 	local ok, err = saveBookmarks()
 	if not ok then
 		list[index], list[target] = list[target], list[index]
-		noctalia.notifyError("Bookmarks", "Failed to reorder: " .. err)
+		noctalia.notifyError(
+			noctalia.tr("title"),
+			noctalia.tr("err_reorder_failed", { error = err })
+		)
 		return
 	end
 end
-
-function onKey(chord, _)
-	if chord == "enter" then
-		execCmd()
-	elseif chord == "up" or chord == "ctrl+p" then
-		prevItem()
-	elseif chord == "down" or chord == "ctrl+n" then
-		nextItem()
-	end
-end
-
-function execCmd() end
-
-function nextItem() end
-
-function prevItem() end
 
 -- Runs a bookmark's command. Two distinct failure paths get a notification:
 -- the shell couldn't even be spawned, or it ran and exited non-zero.
@@ -123,23 +110,27 @@ function prevItem() end
 local function runBookmark(entry)
 	local cmd = entry.cmd
 	if type(cmd) ~= "string" or cmd == "" then
-		noctalia.notifyError("Bookmarks", "This bookmark has no command")
+		noctalia.notifyError(noctalia.tr("title"), noctalia.tr("err_no_command"))
 		return
 	end
 	local label = entry.label or cmd
 	local ok = noctalia.runAsync(cmd, function(result)
 		if result.exitCode ~= 0 then
 			local detail = noctalia.string.trim(result.stderr or "")
-			local msg = '"' .. label .. '" exited with code ' .. tostring(result.exitCode)
+			local msg =
+				noctalia.tr("err_exit_code", { label = label, code = tostring(result.exitCode) })
 			if detail ~= "" then
 				msg = msg .. ": " .. detail
 			end
-			noctalia.notifyError("Bookmarks", msg)
+			noctalia.notifyError(noctalia.tr("title"), msg)
 		end
 		-- exitCode == 0: succeeded, no notification
 	end)
 	if not ok then
-		noctalia.notifyError("Bookmarks", 'Failed to launch "' .. label .. '"')
+		noctalia.notifyError(
+			noctalia.tr("title"),
+			noctalia.tr("err_launch_failed", { label = label })
+		)
 	end
 end
 
@@ -232,13 +223,9 @@ local function entryRow(entry, index, total)
 					noctalia.togglePanel(PANEL_ID)
 				end
 			end,
-			onRightClick = function()
-				if isFolder then
-					onEditEntry(index)
-				else
-					noctalia.notify(tostring(index), "")
-				end
-			end,
+			onRightClick = isFolder and function()
+				onEditEntry(index)
+			end or nil,
 			onMiddleClick = function()
 				onDeleteEntry(index)
 			end,
@@ -567,14 +554,17 @@ function onDeleteFolder()
 	local ok, err = saveBookmarks()
 	if not ok then
 		table.insert(bookmarks, currentFolder, removed)
-		noctalia.notifyError("Bookmarks", "Failed to delete: " .. err)
+		noctalia.notifyError(
+			noctalia.tr("title"),
+			noctalia.tr("err_delete_failed", { error = err })
+		)
 		render()
 		return
 	end
 
 	noctalia.notify(
-		"Bookmarks",
-		'Deleted folder "' .. (removed.label or "") .. '" and its contents'
+		noctalia.tr("title"),
+		noctalia.tr("folder_deleted", { label = removed.label or "" })
 	)
 	currentFolder = nil
 	render()
@@ -623,7 +613,7 @@ function onSaveBookmark()
 	local isFolder = draftKind == "folder"
 
 	if label == "" then
-		draftError = "Label and command are required"
+		draftError = noctalia.tr(isFolder and "err_label_required" or "err_label_cmd_required")
 		render()
 		return
 	end
@@ -632,7 +622,7 @@ function onSaveBookmark()
 	if not isFolder then
 		cmd = noctalia.string.trim(draftCmd)
 		if cmd == "" then
-			draftError = "Label and command are required"
+			draftError = noctalia.tr("err_label_cmd_required")
 			render()
 			return
 		end
@@ -671,14 +661,14 @@ function onSaveBookmark()
 		else
 			table.remove(list)
 		end
-		draftError = "Failed to save: " .. err
+		draftError = noctalia.tr("err_save_failed", { error = err })
 		render()
 		return
 	end
 
 	noctalia.notify(
-		"Bookmarks",
-		(editingIndex ~= nil and "Updated" or "Saved") .. ' "' .. label .. '"'
+		noctalia.tr("title"),
+		noctalia.tr(editingIndex ~= nil and "entry_updated" or "entry_saved", { label = label })
 	)
 	editingIndex = nil
 	editingRoot = false
@@ -710,8 +700,8 @@ function onDeleteEntry(index)
 		-- same as bookmark delete. Surfaced via notification after the fact
 		-- rather than blocking, to stay consistent with existing delete UX.
 		noctalia.notify(
-			"Bookmarks",
-			'Deleted folder "' .. (entry.label or "") .. '" and its contents'
+			noctalia.tr("title"),
+			noctalia.tr("folder_deleted", { label = entry.label or "" })
 		)
 	end
 
@@ -722,7 +712,10 @@ function onDeleteEntry(index)
 	local ok, err = saveBookmarks()
 	if not ok then
 		table.insert(list, index, removed)
-		noctalia.notifyError("Bookmarks", "Failed to delete: " .. err)
+		noctalia.notifyError(
+			noctalia.tr("title"),
+			noctalia.tr("err_delete_failed", { error = err })
+		)
 		render()
 		return
 	end
