@@ -6,8 +6,10 @@ local function render()
     barWidget.setGlyph(noctalia.getConfig("glyph"))
     if open then
         barWidget.setGlyphColor("primary")
+        barWidget.setColor("primary")
     else
         barWidget.setGlyphColor("on_surface")
+        barWidget.setColor("on_surface")
     end
 
     barWidget.setTooltip(noctalia.getConfig("tooltip"))
