@@ -13,6 +13,7 @@ local bookmarks = {}
 local listError = nil
 
 local currentFolder = nil -- nil = root, else index into `bookmarks` of the open folder
+local editMode = false -- when true, rows show reorder/edit/delete controls
 
 local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
@@ -83,6 +84,23 @@ local function saveBookmarks()
 	return true, nil
 end
 
+-- Swaps the entry at `index` with its neighbor in `direction` (-1 up, 1
+-- down) within the given list, then persists. No-ops silently at the
+-- edges or on write failure (rolled back).
+local function moveEntry(list, index, direction)
+	local target = index + direction
+	if target < 1 or target > #list then
+		return
+	end
+	list[index], list[target] = list[target], list[index]
+	local ok, err = saveBookmarks()
+	if not ok then
+		list[index], list[target] = list[target], list[index]
+		noctalia.notifyError("Bookmarks", "Failed to reorder: " .. err)
+		return
+	end
+end
+
 function onKey(chord, _)
 	if chord == "enter" then
 		execCmd()
@@ -125,12 +143,42 @@ local function runBookmark(entry)
 	end
 end
 
-local function entryRow(entry, index)
+local function reorderArrows(index, total)
+	return ui.column({ gap = 2, width = 16 }, {
+		ui.button({
+			glyph = "chevron-up",
+			variant = "ghost",
+			glyphSize = 10,
+			width = 16,
+			height = 15,
+			enabled = index > 1,
+			tooltip = noctalia.tr("move_up_tooltip"),
+			onClick = function()
+				onMoveEntry(index, -1)
+			end,
+		}),
+		ui.button({
+			glyph = "chevron-down",
+			variant = "ghost",
+			glyphSize = 10,
+			width = 16,
+			height = 15,
+			enabled = index < total,
+			tooltip = noctalia.tr("move_down_tooltip"),
+			onClick = function()
+				onMoveEntry(index, 1)
+			end,
+		}),
+	})
+end
+
+local function entryRow(entry, index, total)
 	local isFolder = entryType(entry) == "folder"
 
-	local trailing
+	local trailing = {}
 	if isFolder then
-		trailing = {
+		table.insert(
+			trailing,
 			ui.button({
 				glyph = "chevron-right",
 				variant = "ghost",
@@ -139,9 +187,9 @@ local function entryRow(entry, index)
 				onClick = function()
 					onOpenFolder(index)
 				end,
-			}),
-		}
-	else
+			})
+		)
+	elseif editMode then
 		trailing = {
 			ui.button({
 				glyph = "pencil",
@@ -164,7 +212,13 @@ local function entryRow(entry, index)
 		}
 	end
 
-	local rowChildren = {
+	local rowChildren = {}
+	if editMode then
+		table.insert(rowChildren, reorderArrows(index, total))
+	end
+
+	table.insert(
+		rowChildren,
 		ui.row({
 			gap = 8,
 			align = "center",
@@ -201,8 +255,8 @@ local function entryRow(entry, index)
 				flexGrow = 1,
 				maxLines = 1,
 			}),
-		}),
-	}
+		})
+	)
 
 	for _, node in ipairs(trailing) do
 		table.insert(rowChildren, node)
@@ -279,6 +333,18 @@ local function listView()
 			})
 		)
 	end
+	table.insert(
+		topButtons,
+		ui.button({
+			key = "toggle-edit-mode",
+			glyph = editMode and "eye" or "eye-off",
+			variant = "ghost",
+			controlSize = "sm",
+			width = 32,
+			tooltip = noctalia.tr(editMode and "hide_controls_tooltip" or "show_controls_tooltip"),
+			onClick = "onToggleEditMode",
+		})
+	)
 	table.insert(children, ui.row({ gap = 8 }, topButtons))
 
 	if listError ~= nil then
@@ -295,7 +361,7 @@ local function listView()
 	else
 		local rows = {}
 		for index, entry in ipairs(list) do
-			table.insert(rows, entryRow(entry, index))
+			table.insert(rows, entryRow(entry, index, #list))
 		end
 		table.insert(children, ui.scroll({ flexGrow = 1, gap = 4 }, rows))
 	end
@@ -620,6 +686,17 @@ function onSaveBookmark()
 	render()
 end
 
+function onToggleEditMode()
+	editMode = not editMode
+	render()
+end
+
+function onMoveEntry(index, direction)
+	local list = activeList()
+	moveEntry(list, index, direction)
+	render()
+end
+
 function onDeleteEntry(index)
 	local list = activeList()
 	local entry = list[index]
@@ -656,6 +733,7 @@ function onOpen(_context)
 	view = "list"
 	editingIndex = nil
 	editingRoot = false
+	editMode = false
 	currentFolder = nil
 	loadBookmarks()
 	noctalia.state.set("bookmarks_open", true)
