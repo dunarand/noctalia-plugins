@@ -223,12 +223,6 @@ local function entryRow(entry, index, total)
 					noctalia.togglePanel(PANEL_ID)
 				end
 			end,
-			onRightClick = isFolder and function()
-				onEditEntry(index)
-			end or nil,
-			onMiddleClick = function()
-				onDeleteEntry(index)
-			end,
 		}, {
 			ui.glyph({
 				name = entry.glyph or (isFolder and "folder" or "bookmark"),
