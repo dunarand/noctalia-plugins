@@ -1,5 +1,3 @@
-local PANEL_ID = "dunarand/bookmarks:panel"
-
 -- Prefer the user-configured data_path setting (expanded for ~ and left
 -- absolute/relative as noctalia.expandPath resolves it); fall back to the
 -- plugin's own persistent data directory when unset.
@@ -235,7 +233,7 @@ local function entryRow(entry, index, total)
 				else
 					runBookmark(entry)
 					onClose()
-					noctalia.togglePanel(PANEL_ID)
+                    panel.close()
 				end
 			end,
 		}, {
