@@ -1,6 +1,7 @@
 {
   "new_bookmark": "New Bookmark",
   "edit_bookmark": "Edit Bookmark",
+  "no_bookmarks": "No bookmarks yet",
   "new_folder": "New Folder",
   "delete_folder_button": "Delete folder",
   "edit_folder": "Edit Folder",

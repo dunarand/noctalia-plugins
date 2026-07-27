@@ -353,7 +353,7 @@ local function listView()
 		table.insert(
 			children,
 			ui.label({
-				text = "No bookmarks yet",
+				text = noctalia.tr("no_bookmarks"),
 				color = "on_surface_variant",
 				fontSize = 12,
 			})

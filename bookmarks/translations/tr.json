@@ -1,6 +1,7 @@
 {
   "new_bookmark": "Yeni Yer İmi",
   "edit_bookmark": "Yer İmini Düzenle",
+  "no_bookmarks": "Henüz bir yer imi yok",
   "new_folder": "Yeni Klasör",
   "delete_folder_button": "Klasörü Sil",
   "edit_folder": "Klasörü Düzenle",
