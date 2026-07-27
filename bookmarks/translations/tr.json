@@ -1,6 +1,12 @@
 {
   "new_bookmark": "Yeni Yer İmi",
   "edit_bookmark": "Yer İmini Düzenle",
+  "new_folder": "Yeni Klasör",
+  "delete_folder_button": "Klasörü Sil",
+  "edit_folder": "Klasörü Düzenle",
+  "folder_name_field": "Klasör ismi",
+  "open_tooltip": "Aç",
+  "back_button": "Geri",
   "edit_tooltip": "Düzenle",
   "delete_tooltip": "Sil",
   "cancel_button": "İptal",

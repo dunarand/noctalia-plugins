@@ -1,6 +1,12 @@
 {
   "new_bookmark": "New Bookmark",
   "edit_bookmark": "Edit Bookmark",
+  "new_folder": "New Folder",
+  "delete_folder_button": "Delete folder",
+  "edit_folder": "Edit Folder",
+  "folder_name_field": "Folder name",
+  "open_tooltip": "Open",
+  "back_button": "Back",
   "edit_tooltip": "Edit",
   "delete_tooltip": "Delete",
   "cancel_button": "Cancel",
