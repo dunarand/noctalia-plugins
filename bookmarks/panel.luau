@@ -12,11 +12,35 @@ local formRev = 0
 local bookmarks = {}
 local listError = nil
 
+local currentFolder = nil -- nil = root, else index into `bookmarks` of the open folder
+
+local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
 local draftLabel = ""
 local draftCmd = ""
 local draftError = nil
-local editingIndex = nil -- nil = creating new, number = editing bookmarks[editingIndex]
+local editingIndex = nil -- nil = creating new, number = editing the entry at that index in the active list
+local editingRoot = false -- true when editingIndex refers to `bookmarks` (root) instead of activeList()
+
+-- Returns the array we're currently viewing/editing: root, or the open
+-- folder's items. Falls back to root if currentFolder points at something
+-- that's gone (e.g. deleted from under us).
+local function activeList()
+	if currentFolder == nil then
+		return bookmarks
+	end
+	local folder = bookmarks[currentFolder]
+	if folder == nil or folder.type ~= "folder" then
+		currentFolder = nil
+		return bookmarks
+	end
+	folder.items = folder.items or {}
+	return folder.items
+end
+
+local function entryType(entry)
+	return entry.type == "folder" and "folder" or "bookmark"
+end
 
 local function loadBookmarks()
 	if path == nil then
@@ -76,7 +100,7 @@ function nextItem() end
 function prevItem() end
 
 -- Runs a bookmark's command. Two distinct failure paths get a notification:
--- the shell couldn't even be spawned, or it ran and exited non-zero/timed out.
+-- the shell couldn't even be spawned, or it ran and exited non-zero.
 -- Success stays silent, same as file-search's xdg-open.
 local function runBookmark(entry)
 	local cmd = entry.cmd
@@ -101,25 +125,75 @@ local function runBookmark(entry)
 	end
 end
 
-local function bookmarkRow(entry, index)
-	return ui.row({ key = "bm-" .. index, gap = 8, align = "center" }, {
+local function entryRow(entry, index)
+	local isFolder = entryType(entry) == "folder"
+
+	local trailing
+	if isFolder then
+		trailing = {
+			ui.button({
+				glyph = "chevron-right",
+				variant = "ghost",
+				controlSize = "sm",
+				tooltip = noctalia.tr("open_tooltip"),
+				onClick = function()
+					onOpenFolder(index)
+				end,
+			}),
+		}
+	else
+		trailing = {
+			ui.button({
+				glyph = "pencil",
+				variant = "secondary",
+				controlSize = "sm",
+				tooltip = noctalia.tr("edit_tooltip"),
+				onClick = function()
+					onEditEntry(index)
+				end,
+			}),
+			ui.button({
+				glyph = "trash",
+				variant = "destructive",
+				controlSize = "sm",
+				tooltip = noctalia.tr("delete_tooltip"),
+				onClick = function()
+					onDeleteEntry(index)
+				end,
+			}),
+		}
+	end
+
+	local rowChildren = {
 		ui.row({
 			gap = 8,
 			align = "center",
 			flexGrow = 1,
 			onClick = function()
-				runBookmark(entry)
-				onClose()
-				noctalia.togglePanel(PANEL_ID)
+				if isFolder then
+					onOpenFolder(index)
+				else
+					runBookmark(entry)
+					onClose()
+					noctalia.togglePanel(PANEL_ID)
+				end
 			end,
 			onRightClick = function()
-				noctalia.notify(tostring(index), "")
+				if isFolder then
+					onEditEntry(index)
+				else
+					noctalia.notify(tostring(index), "")
+				end
 			end,
 			onMiddleClick = function()
-				onDeleteBookmark(index)
+				onDeleteEntry(index)
 			end,
 		}, {
-			ui.glyph({ name = entry.glyph or "bookmark", size = 16, color = "on_surface" }),
+			ui.glyph({
+				name = entry.glyph or (isFolder and "folder" or "bookmark"),
+				size = 16,
+				color = "on_surface",
+			}),
 			ui.label({
 				text = entry.label or "",
 				fontSize = 13,
@@ -128,42 +202,88 @@ local function bookmarkRow(entry, index)
 				maxLines = 1,
 			}),
 		}),
-		ui.button({
-			glyph = "pencil",
-			variant = "secondary",
-			controlSize = "sm",
-			tooltip = noctalia.tr("edit_tooltip"),
-			onClick = function()
-				onEditBookmark(index)
-			end,
-		}),
-		ui.button({
-			glyph = "trash",
-			variant = "destructive",
-			controlSize = "sm",
-			tooltip = noctalia.tr("delete_tooltip"),
-			onClick = function()
-				onDeleteBookmark(index)
-			end,
-		}),
-	})
+	}
+
+	for _, node in ipairs(trailing) do
+		table.insert(rowChildren, node)
+	end
+
+	return ui.row({ key = "bm-" .. index, gap = 8, align = "center" }, rowChildren)
 end
 
 local function listView()
-	local children = {
+	local list = activeList()
+	local children = {}
+
+	if currentFolder ~= nil then
+		local folder = bookmarks[currentFolder]
+		table.insert(
+			children,
+			ui.row({ gap = 8, align = "center" }, {
+				ui.button({
+					glyph = "chevron-left",
+					variant = "ghost",
+					controlSize = "sm",
+					tooltip = noctalia.tr("back_button"),
+					onClick = "onBackToRoot",
+				}),
+				ui.row({
+					gap = 6,
+					align = "center",
+					flexGrow = 1,
+					onClick = "onEditFolderHeader",
+				}, {
+					ui.glyph({
+						name = "pencil",
+						size = 13,
+						color = "on_surface_variant",
+					}),
+					ui.label({
+						text = (folder and folder.label) or "",
+						fontSize = 13,
+						fontWeight = "bold",
+						color = "on_surface",
+						flexGrow = 1,
+						maxLines = 1,
+					}),
+				}),
+			})
+		)
+	end
+
+	local topButtons = {
 		ui.button({
 			key = "new-bookmark",
 			text = noctalia.tr("new_bookmark"),
 			glyph = "plus",
 			variant = "primary",
+			flexGrow = 1,
 			enabled = path ~= nil,
-			onClick = "_onNewBookmark",
+			onClick = "onNewBookmark",
 		}),
 	}
+	-- Folders can only be created at root: one level of nesting only. The
+	-- button is omitted entirely inside a folder, rather than just disabled,
+	-- since nesting isn't a supported concept here at all.
+	if currentFolder == nil then
+		table.insert(
+			topButtons,
+			ui.button({
+				key = "new-folder",
+				text = noctalia.tr("new_folder"),
+				glyph = "folder-plus",
+				variant = "secondary",
+				flexGrow = 1,
+				enabled = path ~= nil,
+				onClick = "onNewFolder",
+			})
+		)
+	end
+	table.insert(children, ui.row({ gap = 8 }, topButtons))
 
 	if listError ~= nil then
 		table.insert(children, ui.label({ text = listError, color = "error", fontSize = 12 }))
-	elseif #bookmarks == 0 then
+	elseif #list == 0 then
 		table.insert(
 			children,
 			ui.label({
@@ -174,18 +294,37 @@ local function listView()
 		)
 	else
 		local rows = {}
-		for index, entry in ipairs(bookmarks) do
-			table.insert(rows, bookmarkRow(entry, index))
+		for index, entry in ipairs(list) do
+			table.insert(rows, entryRow(entry, index))
 		end
 		table.insert(children, ui.scroll({ flexGrow = 1, gap = 4 }, rows))
+	end
+
+	if currentFolder ~= nil then
+		table.insert(
+			children,
+			ui.button({
+				key = "delete-folder",
+				text = noctalia.tr("delete_folder_button"),
+				glyph = "trash",
+				variant = "destructive",
+				onClick = "onDeleteFolder",
+			})
+		)
 	end
 
 	return ui.column({ gap = 10, padding = 14, flexGrow = 1 }, children)
 end
 
 local function formView()
-	local title = (editingIndex ~= nil and noctalia.tr("edit_bookmark"))
-		or noctalia.tr("new_bookmark")
+	local isFolder = draftKind == "folder"
+	local title
+	if editingIndex ~= nil then
+		title = isFolder and noctalia.tr("edit_folder") or noctalia.tr("edit_bookmark")
+	else
+		title = isFolder and noctalia.tr("new_folder") or noctalia.tr("new_bookmark")
+	end
+
 	local children = {
 		ui.row({ align = "center", justify = "space_between" }, {
 			ui.label({
@@ -205,7 +344,7 @@ local function formView()
 
 		ui.row({ gap = 8, align = "center" }, {
 			ui.glyph({
-				name = draftGlyph ~= "" and draftGlyph or "bookmark",
+				name = draftGlyph ~= "" and draftGlyph or (isFolder and "folder" or "bookmark"),
 				size = 18,
 				color = "primary",
 			}),
@@ -222,20 +361,26 @@ local function formView()
 		ui.input({
 			key = "label-input-" .. formRev,
 			value = draftLabel,
-			placeholder = noctalia.tr("label_field"),
+			placeholder = isFolder and noctalia.tr("folder_name_field")
+				or noctalia.tr("label_field"),
 			controlSize = "sm",
 			focus = true,
 			onChange = "onLabelChange",
 		}),
-
-		ui.input({
-			key = "cmd-input-" .. formRev,
-			value = draftCmd,
-			placeholder = noctalia.tr("cmd_field"),
-			controlSize = "sm",
-			onChange = "onCmdChange",
-		}),
 	}
+
+	if not isFolder then
+		table.insert(
+			children,
+			ui.input({
+				key = "cmd-input-" .. formRev,
+				value = draftCmd,
+				placeholder = noctalia.tr("cmd_field"),
+				controlSize = "sm",
+				onChange = "onCmdChange",
+			})
+		)
+	end
 
 	if draftError ~= nil then
 		table.insert(children, ui.label({ text = draftError, color = "error", fontSize = 12 }))
@@ -249,11 +394,11 @@ local function formView()
 				variant = "primary",
 				onClick = "onSaveBookmark",
 			}),
-            ui.button({
-                text = noctalia.tr("cancel_button"),
-                variant = "destructive",
-                onClick = "onCancelBookmark",
-            }),
+			ui.button({
+				text = noctalia.tr("cancel_button"),
+				variant = "destructive",
+				onClick = "onCancelBookmark",
+			}),
 		})
 	)
 
@@ -268,8 +413,10 @@ function render()
 	end
 end
 
-function _onNewBookmark()
+function onNewBookmark()
 	editingIndex = nil
+	editingRoot = false
+	draftKind = "bookmark"
 	draftGlyph = "bookmark"
 	draftLabel = ""
 	draftCmd = ""
@@ -279,13 +426,104 @@ function _onNewBookmark()
 	render()
 end
 
-function onEditBookmark(index)
-	local entry = bookmarks[index]
+function onNewFolder()
+	-- Folders are root-only (one level of nesting), so this should be
+	-- unreachable while inside a folder, but guard anyway since it's
+	-- reached via a button click, not just render-time gating.
+	if currentFolder ~= nil then
+		return
+	end
+	editingIndex = nil
+	editingRoot = false
+	draftKind = "folder"
+	draftGlyph = "folder"
+	draftLabel = ""
+	draftCmd = ""
+	draftError = nil
+	formRev += 1
+	view = "new"
+	render()
+end
+
+function onOpenFolder(index)
+	local list = activeList()
+	local entry = list[index]
+	if entry == nil or entryType(entry) ~= "folder" then
+		return
+	end
+	-- currentFolder is only ever set from root (folders are one level deep),
+	-- so `index` here is always an index into the root `bookmarks` array.
+	currentFolder = index
+	render()
+end
+
+function onBackToRoot()
+	currentFolder = nil
+	render()
+end
+
+-- Editing the currently open folder's own name/glyph: the folder entry
+-- lives in root `bookmarks` at `currentFolder`, not in activeList() (which
+-- is the folder's *contents*), so this goes through root explicitly.
+function onEditFolderHeader()
+	if currentFolder == nil then
+		return
+	end
+	local entry = bookmarks[currentFolder]
+	if entry == nil then
+		return
+	end
+	editingIndex = currentFolder
+	editingRoot = true
+	draftKind = "folder"
+	draftGlyph = entry.glyph or "folder"
+	draftLabel = entry.label or ""
+	draftCmd = ""
+	draftError = nil
+	formRev += 1
+	view = "new"
+	render()
+end
+
+function onDeleteFolder()
+	if currentFolder == nil then
+		return
+	end
+	local entry = bookmarks[currentFolder]
+	if entry == nil or entryType(entry) ~= "folder" then
+		return
+	end
+
+	local removed = table.remove(bookmarks, currentFolder)
+	if removed == nil then
+		return
+	end
+	local ok, err = saveBookmarks()
+	if not ok then
+		table.insert(bookmarks, currentFolder, removed)
+		noctalia.notifyError("Bookmarks", "Failed to delete: " .. err)
+		render()
+		return
+	end
+
+	noctalia.notify(
+		"Bookmarks",
+		'Deleted folder "' .. (removed.label or "") .. '" and its contents'
+	)
+	currentFolder = nil
+	render()
+end
+
+function onEditEntry(index)
+	local list = activeList()
+	editingRoot = false
+	local entry = list[index]
 	if entry == nil then
 		return
 	end
 	editingIndex = index
-	draftGlyph = entry.glyph or "bookmark"
+	draftKind = entryType(entry)
+	draftGlyph = entry.glyph or (draftKind == "folder" and "folder" or "bookmark")
 	draftLabel = entry.label or ""
 	draftCmd = entry.cmd or ""
 	draftError = nil
@@ -296,6 +534,7 @@ end
 
 function onCancelBookmark()
 	editingIndex = nil
+	editingRoot = false
 	view = "list"
 	render()
 end
@@ -314,35 +553,57 @@ end
 
 function onSaveBookmark()
 	local label = noctalia.string.trim(draftLabel)
-	local cmd = noctalia.string.trim(draftCmd)
 	local glyph = noctalia.string.trim(draftGlyph)
+	local isFolder = draftKind == "folder"
 
-	if label == "" or cmd == "" then
+	if label == "" then
 		draftError = "Label and command are required"
 		render()
 		return
 	end
-	if glyph == "" then
-		glyph = "bookmark"
+
+	local cmd = nil
+	if not isFolder then
+		cmd = noctalia.string.trim(draftCmd)
+		if cmd == "" then
+			draftError = "Label and command are required"
+			render()
+			return
+		end
 	end
 
-	local newEntry = { glyph = glyph, label = label, cmd = cmd }
-	local previous = nil
+	if glyph == "" then
+		glyph = isFolder and "folder" or "bookmark"
+	end
 
-	if editingIndex ~= nil then
-		previous = bookmarks[editingIndex]
-		bookmarks[editingIndex] = newEntry
+	local list = editingRoot and bookmarks or activeList()
+	local newEntry
+	if isFolder then
+		local previousItems = nil
+		if editingIndex ~= nil then
+			local existing = list[editingIndex]
+			previousItems = existing and existing.items or nil
+		end
+		newEntry = { type = "folder", glyph = glyph, label = label, items = previousItems or {} }
 	else
-		table.insert(bookmarks, newEntry)
+		newEntry = { type = "bookmark", glyph = glyph, label = label, cmd = cmd }
+	end
+
+	local previous = nil
+	if editingIndex ~= nil then
+		previous = list[editingIndex]
+		list[editingIndex] = newEntry
+	else
+		table.insert(list, newEntry)
 	end
 
 	local ok, err = saveBookmarks()
 	if not ok then
 		-- roll back the in-memory change on write failure
 		if editingIndex ~= nil then
-			bookmarks[editingIndex] = previous
+			list[editingIndex] = previous
 		else
-			table.remove(bookmarks)
+			table.remove(list)
 		end
 		draftError = "Failed to save: " .. err
 		render()
@@ -351,21 +612,39 @@ function onSaveBookmark()
 
 	noctalia.notify(
 		"Bookmarks",
-		(editingIndex ~= nil and "Updated" or "Saved") .. ' bookmark "' .. label .. '"'
+		(editingIndex ~= nil and "Updated" or "Saved") .. ' "' .. label .. '"'
 	)
 	editingIndex = nil
+	editingRoot = false
 	view = "list"
 	render()
 end
 
-function onDeleteBookmark(index)
-	local removed = table.remove(bookmarks, index)
+function onDeleteEntry(index)
+	local list = activeList()
+	local entry = list[index]
+	if entry == nil then
+		return
+	end
+	if entryType(entry) == "folder" and #(entry.items or {}) > 0 then
+		-- Deleting a non-empty folder takes its contents with it; the row's
+		-- delete button has no separate confirm dialog available (panels
+		-- have no native modal), so this is a same-click destructive action
+		-- same as bookmark delete. Surfaced via notification after the fact
+		-- rather than blocking, to stay consistent with existing delete UX.
+		noctalia.notify(
+			"Bookmarks",
+			'Deleted folder "' .. (entry.label or "") .. '" and its contents'
+		)
+	end
+
+	local removed = table.remove(list, index)
 	if removed == nil then
 		return
 	end
 	local ok, err = saveBookmarks()
 	if not ok then
-		table.insert(bookmarks, index, removed)
+		table.insert(list, index, removed)
 		noctalia.notifyError("Bookmarks", "Failed to delete: " .. err)
 		render()
 		return
@@ -376,6 +655,8 @@ end
 function onOpen(_context)
 	view = "list"
 	editingIndex = nil
+	editingRoot = false
+	currentFolder = nil
 	loadBookmarks()
 	noctalia.state.set("bookmarks_open", true)
 	render()
