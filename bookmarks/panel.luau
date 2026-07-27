@@ -1,10 +1,25 @@
 local PANEL_ID = "dunarand/bookmarks:panel"
 
-local dataDir, dataDirErr = noctalia.pluginDataDir()
-if dataDir == nil then
-	noctalia.log("bookmarks: pluginDataDir failed: " .. tostring(dataDirErr))
+-- Prefer the user-configured data_path setting (expanded for ~ and left
+-- absolute/relative as noctalia.expandPath resolves it); fall back to the
+-- plugin's own persistent data directory when unset.
+local function resolveDataPath()
+	local configured = noctalia.getConfig("data_path")
+	if type(configured) == "string" and noctalia.string.trim(configured) ~= "" then
+		return noctalia.expandPath(noctalia.string.trim(configured)), nil
+	end
+
+	local dataDir, dataDirErr = noctalia.pluginDataDir()
+	if dataDir == nil then
+		return nil, dataDirErr
+	end
+	return dataDir .. "/data.json", nil
 end
-local path = dataDir and (dataDir .. "/data.json") or nil
+
+local path, pathErr = resolveDataPath()
+if path == nil then
+	noctalia.log("bookmarks: could not resolve data path: " .. tostring(pathErr))
+end
 
 local view = "list" -- "list" | "new"
 local formRev = 0

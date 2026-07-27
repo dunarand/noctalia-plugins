@@ -46,6 +46,10 @@
     "text": {
       "label": "Text",
       "description": "Bar widget's label. Leave empty to display only the glyph."
+    },
+    "data_path": {
+      "label": "Data file",
+      "description": "Where data.json is stored. Leave empty to use the default plugin data directory."
     }
   }
 }

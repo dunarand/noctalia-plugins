@@ -46,6 +46,10 @@
     "text": {
       "label": "Yazı",
       "description": "Bar aracının etiketi. Barda sadece sembolün görünmesi için boş bırakın."
+    },
+    "data_path": {
+      "label": "Veri dosyası",
+      "description": "data.json dosyasının saklandığı konum. Varsayılan eklenti veri konumunu kullanmak için boş bırakın."
     }
   }
 }
