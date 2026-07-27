@@ -13,6 +13,7 @@ local bookmarks = {}
 local listError = nil
 
 local currentFolder = nil -- nil = root, else index into `bookmarks` of the open folder
+local editMode = false -- when true, rows show reorder/edit/delete controls
 
 local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
@@ -174,9 +175,10 @@ end
 local function entryRow(entry, index, total)
 	local isFolder = entryType(entry) == "folder"
 
-	local trailing
+	local trailing = {}
 	if isFolder then
-		trailing = {
+		table.insert(
+			trailing,
 			ui.button({
 				glyph = "chevron-right",
 				variant = "ghost",
@@ -185,9 +187,9 @@ local function entryRow(entry, index, total)
 				onClick = function()
 					onOpenFolder(index)
 				end,
-			}),
-		}
-	else
+			})
+		)
+	elseif editMode then
 		trailing = {
 			ui.button({
 				glyph = "pencil",
@@ -210,7 +212,10 @@ local function entryRow(entry, index, total)
 		}
 	end
 
-	local rowChildren = { reorderArrows(index, total) }
+	local rowChildren = {}
+	if editMode then
+		table.insert(rowChildren, reorderArrows(index, total))
+	end
 
 	table.insert(
 		rowChildren,
@@ -328,6 +333,18 @@ local function listView()
 			})
 		)
 	end
+	table.insert(
+		topButtons,
+		ui.button({
+			key = "toggle-edit-mode",
+			glyph = editMode and "eye" or "eye-off",
+			variant = "ghost",
+			controlSize = "sm",
+			width = 32,
+			tooltip = noctalia.tr(editMode and "hide_controls_tooltip" or "show_controls_tooltip"),
+			onClick = "onToggleEditMode",
+		})
+	)
 	table.insert(children, ui.row({ gap = 8 }, topButtons))
 
 	if listError ~= nil then
@@ -669,6 +686,11 @@ function onSaveBookmark()
 	render()
 end
 
+function onToggleEditMode()
+	editMode = not editMode
+	render()
+end
+
 function onMoveEntry(index, direction)
 	local list = activeList()
 	moveEntry(list, index, direction)
@@ -711,6 +733,7 @@ function onOpen(_context)
 	view = "list"
 	editingIndex = nil
 	editingRoot = false
+	editMode = false
 	currentFolder = nil
 	loadBookmarks()
 	noctalia.state.set("bookmarks_open", true)

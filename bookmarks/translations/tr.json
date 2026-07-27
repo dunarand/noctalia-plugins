@@ -11,6 +11,8 @@
   "delete_tooltip": "Sil",
   "move_up_tooltip": "Move up",
   "move_down_tooltip": "Move down",
+  "show_controls_tooltip": "Show reorder/edit/delete controls",
+  "hide_controls_tooltip": "Hide reorder/edit/delete controls",
   "cancel_button": "İptal",
   "save_button": "Kaydet",
   "glyph_field": "Sembol (ör. bookmark)",
