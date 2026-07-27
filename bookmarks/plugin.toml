@@ -7,7 +7,7 @@ author       = "dunarand"
 license      = "MIT"
 icon         = "bookmark"
 description  = "A user-defined list of bookmarks. Each item has a label, a glyph, and a shell command."
-tags         = ["launcher", "productivity", "utility"]
+tags         = ["launcher", "panel", "productivity", "utility", "widget"]
 dependencies = []
 
 [[setting]]
