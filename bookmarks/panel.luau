@@ -913,6 +913,7 @@ end
 
 function onGlyphChange(value)
 	draftGlyph = value
+	render()
 end
 
 function onLabelChange(value)
