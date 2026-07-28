@@ -27,38 +27,48 @@ hl.bind(
 )
 ```
 
-Bookmarks and folders are listed in the main panel.
+- Bookmarks and folders are listed in the main panel.
 
-![](./assets/preview-1.png)
+  ![](./assets/preview-1.png)
 
-You can hit the "eye" icon to enable edit mode where you can reorder, edit, or delete bookmarks.
+- "?" button shows tooltips: bookmark command and its description.
 
-![](./assets/preview-2.png)
+  ![](./assets/preview-2.png)
 
-You can create or edit bookmarks by assigning them a glyph, a label, and a command.
+- You can create or edit bookmarks by assigning them a glyph, a label, a command, and an
+  optional description.
 
-![](./assets/preview-3.png)
+  ![](./assets/preview-3.png)
 
-"Run in background" toggle wraps the command you defined in the following way:
+  - "Run in background" toggle wraps the command you defined in the following way:
 
-`nohup <bookmark-command> >/dev/null 2>&1 &`
+    `nohup <bookmark-command> >/dev/null 2>&1 &`
 
-For example, instead of typing the whole command
+    For example, instead of typing the whole command
 
-`nohup xdg-open "$HOME" >/dev/null 2>&1 &`
+    `nohup xdg-open "$HOME" >/dev/null 2>&1 &`
 
-each time, you can instead define the command as `xdg-open "$HOME"` and toggle "Run in background"
-switch.
+    each time, you can instead define the command as `xdg-open "$HOME"` and toggle "Run in
+    background" switch.
 
-"Run in terminal" switch executes the command with the default terminal. These switches are mutually
-exclusive so you can only choose one. Toggling on a switch will result the other to turn off.
+  - "Run in terminal" switch executes the command with the default terminal. These switches are
+    mutually exclusive so you can only choose one. Toggling on a switch will result the other to
+    turn off.
 
-You can also create folders and nest other bookmarks within folders.
+- You can create folders and nest other bookmarks within folders.
 
-![](./assets/preview-4.png)
+  ![](./assets/preview-4.png)
 
-Folders cannot nest other folders. This is by design and it'll not change unless I find a genuine
-usecase. You can edit folders by clicking on the "pen" icon next to its name.
+  Folders cannot nest other folders. This is by design and it'll not change unless I find a
+  genuine usecase. You can edit folders by clicking on the "pen" icon next to its name.
+
+- You can press the "eye" icon to enter edit mode where you can edit, delete, and reorder bookmarks.
+
+  ![](./assets/preview-5.png)
+
+- Each bookmark can be edited anytime.
+
+  ![](./assets/preview-6.png)
 
 The saved bookmarks are written to `$NOCTALIA_STATE_HOME/plugins/data/dunarand/bookmarks/data.json`.
 By default, `$NOCTALIA_STATE_HOME` should point to `~/.local/state/noctalia`. You can point to a
@@ -77,9 +87,10 @@ The bar widget has the following settings:
 
 The plugin itself has the following settings:
 
-| Setting     | Type   | Default | Description                                                                           |
-| ----------- | ------ | ------- | ------------------------------------------------------------------------------------- |
-| `data_path` | `file` |         | data.json file to store the saved bookmarks. Leave empty to use the default location. |
+| Setting            | Type   | Default | Description                                                                           |
+| ------------------ | ------ | ------- | ------------------------------------------------------------------------------------- |
+| `data_path`        | `file` |         | data.json file to store the saved bookmarks. Leave empty to use the default location. |
+| `show_info_button` | `bool` | `true`  | Shows the "?" tooltip button on the bookmark entries.                                 |
 
 ## IPC
 
