@@ -367,26 +367,36 @@ local function entryRow(entry, index, total)
 	end
 
 	local isSelected = selectedIndex == index
+	local activateEntry = function()
+		if isFolder then
+			onOpenFolder(index)
+		else
+			runBookmark(entry)
+			onClose()
+			panel.close()
+		end
+	end
 	table.insert(
 		rowChildren,
 		ui.row({
+			key = "bm-main-" .. index,
 			gap = 8,
 			align = "center",
 			flexGrow = 1,
-			onClick = function()
-				if isFolder then
-					onOpenFolder(index)
-				else
-					runBookmark(entry)
-					onClose()
-					panel.close()
+			height = 30,
+			tooltip = (not isFolder) and entry.cmd or nil,
+			onClick = activateEntry,
+			onHover = function(state)
+				if state == "true" then
+					selectedIndex = index
+					render()
 				end
 			end,
 		}, {
 			ui.glyph({
 				name = entry.glyph or (isFolder and "folder" or "bookmark"),
 				size = 16,
-				color = isSelected and "primary" or "on_surface",
+				color = "on_surface",
 			}),
 			ui.label({
 				text = entry.label or "",
@@ -412,11 +422,21 @@ end
 local function searchResultRow(result, rowIndex)
 	local entry = result.entry
 	local isSelected = selectedIndex == rowIndex
+	local runEntry = function()
+		runBookmark(entry)
+		onClose()
+		panel.close()
+	end
+
 	local children = {
-		ui.glyph({
-			name = entry.glyph or "bookmark",
-			size = 16,
-			color = isSelected and "primary" or "on_surface",
+		ui.button({
+			glyph = entry.glyph or "bookmark",
+			variant = "ghost",
+			glyphSize = 16,
+			width = 24,
+			height = 24,
+			tooltip = entry.cmd,
+			onClick = runEntry,
 		}),
 		ui.label({
 			text = entry.label or "",
@@ -444,10 +464,12 @@ local function searchResultRow(result, rowIndex)
 		gap = 8,
 		align = "center",
 		height = 30,
-		onClick = function()
-			runBookmark(entry)
-			onClose()
-			panel.close()
+		onClick = runEntry,
+		onHover = function(state)
+			if state == "true" then
+				selectedIndex = rowIndex
+				render()
+			end
 		end,
 	}, children)
 end
