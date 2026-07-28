@@ -1,6 +1,5 @@
--- Prefer the user-configured data_path setting (expanded for ~ and left
--- absolute/relative as noctalia.expandPath resolves it); fall back to the
--- plugin's own persistent data directory when unset.
+-- Prefer the user-configured data_path setting; fall back to the plugin's
+-- own persistent data directory when unset.
 local function resolveDataPath()
 	local configured = noctalia.getConfig("data_path")
 	if type(configured) == "string" and noctalia.string.trim(configured) ~= "" then
@@ -45,8 +44,8 @@ local draftError = nil
 local editingIndex = nil -- nil = creating new, number = editing the entry at that index in the active list
 local editingRoot = false -- true when editingIndex refers to `bookmarks` (root) instead of activeList()
 
--- Enforce strict booleans to satisfy ui.toggle's checked (bool) requirement.
--- Handles native booleans, string coercions, and UI event objects.
+-- Coerces native booleans, string coercions, and UI event objects into a
+-- strict boolean, as required by ui.toggle's `checked` prop.
 local function parseBool(val)
 	if type(val) == "table" then
 		return val.checked == true or val.value == true
@@ -308,7 +307,7 @@ local function activateRow(row)
 	end
 end
 
-local function entryRow(entry, index, total)
+local function entryRow(entry, index)
 	local isFolder = entryType(entry) == "folder"
 
 	local trailing = {}
@@ -637,7 +636,7 @@ local function listView()
 			if editMode then
 				table.insert(rows, insertionGap(index, "before"))
 			end
-			table.insert(rows, entryRow(entry, index, count))
+			table.insert(rows, entryRow(entry, index))
 		end
 		if editMode and count > 0 then
 			table.insert(rows, insertionGap(count, "after"))
@@ -830,6 +829,7 @@ function onNewFolder()
 	draftGlyph = "folder"
 	draftLabel = ""
 	draftCmd = ""
+	draftDescription = ""
 	draftRunInBackground = false
 	draftRunInTerminal = false
 	draftError = nil
@@ -874,6 +874,7 @@ function onEditFolderHeader()
 	draftGlyph = entry.glyph or "folder"
 	draftLabel = entry.label or ""
 	draftCmd = ""
+	draftDescription = ""
 	draftRunInBackground = false
 	draftRunInTerminal = false
 	draftError = nil
@@ -1151,15 +1152,12 @@ function onClose()
 	noctalia.state.set("bookmarks_open", false)
 end
 
--- Keyboard navigation: ctrl+n / ctrl+p move the selection through the
--- currently visible rows (search results or the active folder's list),
--- looping past either end; Return activates whatever is selected. Only
--- Keyboard navigation: ctrl+n/down and ctrl+p/up move the selection
--- through the currently visible rows (search results or the active
--- folder's list), looping past either end; Return activates whatever is
--- selected; ctrl+s jumps focus to the search box (root view only,
--- since that's the only place it's rendered). Only acts on key-down
--- (pressed == true) so each chord fires once per press.
+-- Keyboard navigation: ctrl+n/down and ctrl+p/up move the selection through
+-- the currently visible rows (search results or the active folder's list),
+-- looping past either end; Return activates whatever is selected; ctrl+s
+-- jumps focus to the search box (root view only, since that's the only
+-- place it's rendered). Only acts on key-down (pressed == true) so each
+-- chord fires once per press.
 function onKey(chord, pressed)
 	if not pressed then
 		return
