@@ -30,6 +30,9 @@ local editMode = false -- when true, rows show reorder/edit/delete controls
 
 local searchQuery = ""
 local searchRev = 0 -- bumped to reseed the search input on open
+local focusSearchOnRender = false -- one-shot: grabs the search input on the next render only
+
+local selectedIndex = nil -- 1-based position within the currently visible list, or nil
 
 local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
@@ -261,6 +264,49 @@ local function insertionGap(anchorIndex, place)
 	})
 end
 
+-- Returns the ordered list of rows currently visible for keyboard
+-- navigation, in the same order they're rendered. Each entry is
+-- { kind = "search", result } or { kind = "entry", entry, index }, so
+-- Enter can dispatch the right action regardless of view.
+local function visibleRows()
+	local trimmed = noctalia.string.trim(searchQuery)
+	if currentFolder == nil and trimmed ~= "" then
+		local rows = {}
+		for _, result in ipairs(searchBookmarks(searchQuery)) do
+			table.insert(rows, { kind = "search", result = result })
+		end
+		return rows
+	end
+
+	local list = activeList()
+	local rows = {}
+	for index, entry in ipairs(list) do
+		table.insert(rows, { kind = "entry", entry = entry, index = index })
+	end
+	return rows
+end
+
+-- Runs whatever the given visible-row entry represents: opens a folder,
+-- or runs and closes on a bookmark (search result or normal row alike).
+local function activateRow(row)
+	if row == nil then
+		return
+	end
+	if row.kind == "search" then
+		runBookmark(row.result.entry)
+		onClose()
+		panel.close()
+		return
+	end
+	if entryType(row.entry) == "folder" then
+		onOpenFolder(row.index)
+	else
+		runBookmark(row.entry)
+		onClose()
+		panel.close()
+	end
+end
+
 local function entryRow(entry, index, total)
 	local isFolder = entryType(entry) == "folder"
 
@@ -320,6 +366,7 @@ local function entryRow(entry, index, total)
 		)
 	end
 
+	local isSelected = selectedIndex == index
 	table.insert(
 		rowChildren,
 		ui.row({
@@ -339,12 +386,13 @@ local function entryRow(entry, index, total)
 			ui.glyph({
 				name = entry.glyph or (isFolder and "folder" or "bookmark"),
 				size = 16,
-				color = "on_surface",
+				color = isSelected and "primary" or "on_surface",
 			}),
 			ui.label({
 				text = entry.label or "",
 				fontSize = 13,
-				color = "on_surface",
+				color = isSelected and "primary" or "on_surface",
+				fontWeight = isSelected and "bold" or "regular",
 				flexGrow = 1,
 				maxLines = 1,
 			}),
@@ -363,12 +411,18 @@ end
 -- label when the match came from inside one.
 local function searchResultRow(result, rowIndex)
 	local entry = result.entry
+	local isSelected = selectedIndex == rowIndex
 	local children = {
-		ui.glyph({ name = entry.glyph or "bookmark", size = 16, color = "on_surface" }),
+		ui.glyph({
+			name = entry.glyph or "bookmark",
+			size = 16,
+			color = isSelected and "primary" or "on_surface",
+		}),
 		ui.label({
 			text = entry.label or "",
 			fontSize = 13,
-			color = "on_surface",
+			color = isSelected and "primary" or "on_surface",
+			fontWeight = isSelected and "bold" or "regular",
 			flexGrow = 1,
 			maxLines = 1,
 		}),
@@ -441,6 +495,8 @@ local function listView()
 	end
 
 	if currentFolder == nil then
+		local wantsFocus = focusSearchOnRender
+		focusSearchOnRender = false
 		table.insert(
 			children,
 			ui.input({
@@ -448,7 +504,9 @@ local function listView()
 				value = searchQuery,
 				placeholder = noctalia.tr("search_placeholder"),
 				controlSize = "sm",
+				focus = wantsFocus,
 				onChange = "onSearchChanged",
+				onSubmit = "onSearchSubmit",
 			})
 		)
 	end
@@ -734,11 +792,13 @@ function onOpenFolder(index)
 	-- currentFolder is only ever set from root (folders are one level deep),
 	-- so `index` here is always an index into the root `bookmarks` array.
 	currentFolder = index
+	selectedIndex = 1
 	render()
 end
 
 function onBackToRoot()
 	currentFolder = nil
+	selectedIndex = 1
 	render()
 end
 
@@ -945,7 +1005,13 @@ end
 
 function onSearchChanged(value)
 	searchQuery = value
+	selectedIndex = 1
 	render()
+end
+
+function onSearchSubmit()
+	local rows = visibleRows()
+	activateRow(rows[selectedIndex] or rows[1])
 end
 
 -- Drop callback for the bookmark list's drag-and-drop reordering.
@@ -1013,6 +1079,7 @@ function onOpen(_context)
 	currentFolder = nil
 	searchQuery = ""
 	searchRev += 1
+	selectedIndex = 1
 	loadBookmarks()
 	noctalia.state.set("bookmarks_open", true)
 	render()
@@ -1020,6 +1087,59 @@ end
 
 function onClose()
 	noctalia.state.set("bookmarks_open", false)
+end
+
+-- Keyboard navigation: ctrl+n / ctrl+p move the selection through the
+-- currently visible rows (search results or the active folder's list),
+-- looping past either end; Return activates whatever is selected. Only
+-- Keyboard navigation: ctrl+n/down and ctrl+p/up move the selection
+-- through the currently visible rows (search results or the active
+-- folder's list), looping past either end; Return activates whatever is
+-- selected; ctrl+s jumps focus to the search box (root view only,
+-- since that's the only place it's rendered). Only acts on key-down
+-- (pressed == true) so each chord fires once per press.
+function onKey(chord, pressed)
+	if not pressed then
+		return
+	end
+	if view ~= "list" then
+		return
+	end
+
+	if chord == "ctrl+s" then
+		if currentFolder == nil then
+			searchRev += 1
+			focusSearchOnRender = true
+			render()
+		end
+		return
+	end
+
+	local rows = visibleRows()
+	local count = #rows
+	if count == 0 then
+		selectedIndex = nil
+		return
+	end
+
+	if chord == "ctrl+n" or chord == "down" then
+		if selectedIndex == nil then
+			selectedIndex = 1
+		else
+			selectedIndex = selectedIndex % count + 1
+		end
+		render()
+	elseif chord == "ctrl+p" or chord == "up" then
+		if selectedIndex == nil then
+			selectedIndex = count
+		else
+			selectedIndex = (selectedIndex - 2) % count + 1
+		end
+		render()
+	elseif chord == "Return" then
+		local row = rows[selectedIndex]
+		activateRow(row)
+	end
 end
 
 function update()
