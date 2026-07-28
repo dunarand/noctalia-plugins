@@ -1,6 +1,5 @@
--- Prefer the user-configured data_path setting (expanded for ~ and left
--- absolute/relative as noctalia.expandPath resolves it); fall back to the
--- plugin's own persistent data directory when unset.
+-- Prefer the user-configured data_path setting; fall back to the plugin's
+-- own persistent data directory when unset.
 local function resolveDataPath()
 	local configured = noctalia.getConfig("data_path")
 	if type(configured) == "string" and noctalia.string.trim(configured) ~= "" then
@@ -38,14 +37,15 @@ local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
 local draftLabel = ""
 local draftCmd = ""
+local draftDescription = ""
 local draftRunInBackground = false
 local draftRunInTerminal = false
 local draftError = nil
 local editingIndex = nil -- nil = creating new, number = editing the entry at that index in the active list
 local editingRoot = false -- true when editingIndex refers to `bookmarks` (root) instead of activeList()
 
--- Enforce strict booleans to satisfy ui.toggle's checked (bool) requirement.
--- Handles native booleans, string coercions, and UI event objects.
+-- Coerces native booleans, string coercions, and UI event objects into a
+-- strict boolean, as required by ui.toggle's `checked` prop.
 local function parseBool(val)
 	if type(val) == "table" then
 		return val.checked == true or val.value == true
@@ -307,7 +307,7 @@ local function activateRow(row)
 	end
 end
 
-local function entryRow(entry, index, total)
+local function entryRow(entry, index)
 	local isFolder = entryType(entry) == "folder"
 
 	local trailing = {}
@@ -324,7 +324,27 @@ local function entryRow(entry, index, total)
 				end,
 			})
 		)
-	elseif editMode then
+	elseif not editMode and parseBool(noctalia.getConfig("show_info_button")) then
+		local description = noctalia.string.trim(entry.description or "")
+		local cmd = entry.cmd or ""
+		local infoTooltip = noctalia.tr("info_cmd_line", { cmd = cmd })
+		if description ~= "" then
+			infoTooltip = infoTooltip
+				.. "\n"
+				.. noctalia.tr("info_description_line", { description = description })
+		end
+		table.insert(
+			trailing,
+			ui.button({
+				glyph = "help-circle",
+				variant = "ghost",
+				controlSize = "sm",
+				tooltip = infoTooltip,
+				onClick = function() end,
+			})
+		)
+	end
+	if not isFolder and editMode then
 		trailing = {
 			ui.button({
 				glyph = "pencil",
@@ -616,7 +636,7 @@ local function listView()
 			if editMode then
 				table.insert(rows, insertionGap(index, "before"))
 			end
-			table.insert(rows, entryRow(entry, index, count))
+			table.insert(rows, entryRow(entry, index))
 		end
 		if editMode and count > 0 then
 			table.insert(rows, insertionGap(count, "after"))
@@ -707,6 +727,17 @@ local function formView()
 
 		table.insert(
 			children,
+			ui.input({
+				key = "description-input-" .. formRev,
+				value = draftDescription,
+				placeholder = noctalia.tr("description_field"),
+				controlSize = "sm",
+				onChange = "onDescriptionChange",
+			})
+		)
+
+		table.insert(
+			children,
 			ui.row({ gap = 8, align = "center" }, {
 				ui.toggle({
 					checked = draftRunInBackground,
@@ -776,6 +807,7 @@ function onNewBookmark()
 	draftGlyph = "bookmark"
 	draftLabel = ""
 	draftCmd = ""
+	draftDescription = ""
 	draftRunInBackground = false
 	draftRunInTerminal = false
 	draftError = nil
@@ -797,6 +829,7 @@ function onNewFolder()
 	draftGlyph = "folder"
 	draftLabel = ""
 	draftCmd = ""
+	draftDescription = ""
 	draftRunInBackground = false
 	draftRunInTerminal = false
 	draftError = nil
@@ -841,6 +874,7 @@ function onEditFolderHeader()
 	draftGlyph = entry.glyph or "folder"
 	draftLabel = entry.label or ""
 	draftCmd = ""
+	draftDescription = ""
 	draftRunInBackground = false
 	draftRunInTerminal = false
 	draftError = nil
@@ -893,6 +927,7 @@ function onEditEntry(index)
 	draftGlyph = entry.glyph or (draftKind == "folder" and "folder" or "bookmark")
 	draftLabel = entry.label or ""
 	draftCmd = entry.cmd or ""
+	draftDescription = entry.description or ""
 
 	-- Strictly enforce the native boolean type right from JSON initialization
 	draftRunInBackground = parseBool(entry.runInBackground)
@@ -922,6 +957,10 @@ end
 
 function onCmdChange(value)
 	draftCmd = value
+end
+
+function onDescriptionChange(value)
+	draftDescription = value
 end
 
 function onRunInBackgroundChange(value)
@@ -985,6 +1024,7 @@ function onSaveBookmark()
 			glyph = glyph,
 			label = label,
 			cmd = cmd,
+			description = noctalia.string.trim(draftDescription),
 			runInBackground = draftRunInBackground,
 			runInTerminal = draftRunInTerminal,
 		}
@@ -1112,15 +1152,12 @@ function onClose()
 	noctalia.state.set("bookmarks_open", false)
 end
 
--- Keyboard navigation: ctrl+n / ctrl+p move the selection through the
--- currently visible rows (search results or the active folder's list),
--- looping past either end; Return activates whatever is selected. Only
--- Keyboard navigation: ctrl+n/down and ctrl+p/up move the selection
--- through the currently visible rows (search results or the active
--- folder's list), looping past either end; Return activates whatever is
--- selected; ctrl+s jumps focus to the search box (root view only,
--- since that's the only place it's rendered). Only acts on key-down
--- (pressed == true) so each chord fires once per press.
+-- Keyboard navigation: ctrl+n/down and ctrl+p/up move the selection through
+-- the currently visible rows (search results or the active folder's list),
+-- looping past either end; Return activates whatever is selected; ctrl+s
+-- jumps focus to the search box (root view only, since that's the only
+-- place it's rendered). Only acts on key-down (pressed == true) so each
+-- chord fires once per press.
 function onKey(chord, pressed)
 	if not pressed then
 		return

@@ -21,6 +21,9 @@
   "glyph_field": "Glyph name (e.g. bookmark)",
   "label_field": "Label",
   "cmd_field": "Shell command",
+  "description_field": "Description (optional)",
+  "info_cmd_line": "Command: {cmd}",
+  "info_description_line": "Description: {description}",
   "run_in_background_field": "Run in background",
   "run_in_terminal_field": "Run in terminal",
   "err_read_failed": "Failed to read bookmarks: {error}",
@@ -53,6 +56,10 @@
     "data_path": {
       "label": "Data file",
       "description": "Where data.json is stored. Leave empty to use the default plugin data directory."
+    },
+    "show_info_button": {
+      "label": "Show info button",
+      "description": "Show a \"?\" button on bookmarks (not folders) to view their description and command on hover."
     }
   }
 }
