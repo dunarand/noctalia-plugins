@@ -1,4 +1,4 @@
-# noctalia-plugins
+# Noctalia Plugins
 
 Noctalia v5 plugins I've developed
 
