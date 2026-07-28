@@ -20,6 +20,8 @@
   "glyph_field": "Glyph name (e.g. bookmark)",
   "label_field": "Label",
   "cmd_field": "Shell command",
+  "run_in_background_field": "Run in background",
+  "run_in_terminal_field": "Run in terminal",
   "err_read_failed": "Failed to read bookmarks: {error}",
   "err_corrupt": "Bookmarks file is corrupt: {error}",
   "err_no_data_dir": "No data directory available",
