@@ -283,7 +283,7 @@ local function entryRow(entry, index, total)
 		table.insert(rowChildren, node)
 	end
 
-	return ui.row({ key = "bm-" .. index, gap = 8, align = "center" }, rowChildren)
+	return ui.row({ key = "bm-" .. index, gap = 8, align = "center", height = 30 }, rowChildren)
 end
 
 local function listView()
@@ -386,7 +386,7 @@ local function listView()
 		for index, entry in ipairs(list) do
 			table.insert(rows, entryRow(entry, index, #list))
 		end
-		table.insert(children, ui.scroll({ flexGrow = 1, gap = 4 }, rows))
+		table.insert(children, ui.scroll({ flexGrow = 1, gap = 2 }, rows))
 	end
 
 	if currentFolder ~= nil then
