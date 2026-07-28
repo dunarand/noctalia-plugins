@@ -51,3 +51,4 @@ height          = 470
 placement       = "attached"
 position        = "auto"
 open_near_click = true
+capture_keys    = ["ctrl+n", "ctrl+p", "up", "down", "Return", "ctrl+s"]
