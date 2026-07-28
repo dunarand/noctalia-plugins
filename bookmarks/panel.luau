@@ -28,6 +28,9 @@ local listError = nil
 local currentFolder = nil -- nil = root, else index into `bookmarks` of the open folder
 local editMode = false -- when true, rows show reorder/edit/delete controls
 
+local searchQuery = ""
+local searchRev = 0 -- bumped to reseed the search input on open
+
 local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
 local draftLabel = ""
@@ -65,6 +68,54 @@ end
 
 local function entryType(entry)
 	return entry.type == "folder" and "folder" or "bookmark"
+end
+
+-- Fuzzy-searches bookmark labels only (not commands, not folder names)
+-- across root and every folder's contents, using Noctalia's native
+-- matcher. Returns results sorted best-match-first, each as
+-- { entry, path, folderIndex, index }, where folderIndex/index locate the
+-- entry for running/editing it (folderIndex = nil for root entries).
+local function searchBookmarks(query)
+	local trimmed = noctalia.string.trim(query)
+	if trimmed == "" then
+		return {}
+	end
+
+	local results = {}
+	for index, entry in ipairs(bookmarks) do
+		if entryType(entry) == "folder" then
+			for subIndex, subEntry in ipairs(entry.items or {}) do
+				if entryType(subEntry) ~= "folder" then
+					local score = noctalia.fuzzyScore(trimmed, subEntry.label or "")
+					if score ~= nil then
+						table.insert(results, {
+							entry = subEntry,
+							path = entry.label or "",
+							folderIndex = index,
+							index = subIndex,
+							score = score,
+						})
+					end
+				end
+			end
+		else
+			local score = noctalia.fuzzyScore(trimmed, entry.label or "")
+			if score ~= nil then
+				table.insert(results, {
+					entry = entry,
+					path = nil,
+					folderIndex = nil,
+					index = index,
+					score = score,
+				})
+			end
+		end
+	end
+
+	table.sort(results, function(a, b)
+		return a.score > b.score
+	end)
+	return results
 end
 
 local function loadBookmarks()
@@ -307,9 +358,51 @@ local function entryRow(entry, index, total)
 	return ui.row({ key = "bm-" .. index, gap = 8, align = "center", height = 30 }, rowChildren)
 end
 
+-- One row in the flat search results list: runs the bookmark on click,
+-- same as a normal row, and shows its containing folder as a small path
+-- label when the match came from inside one.
+local function searchResultRow(result, rowIndex)
+	local entry = result.entry
+	local children = {
+		ui.glyph({ name = entry.glyph or "bookmark", size = 16, color = "on_surface" }),
+		ui.label({
+			text = entry.label or "",
+			fontSize = 13,
+			color = "on_surface",
+			flexGrow = 1,
+			maxLines = 1,
+		}),
+	}
+	if result.path ~= nil then
+		table.insert(
+			children,
+			ui.label({
+				text = result.path,
+				fontSize = 11,
+				color = "on_surface_variant",
+				maxLines = 1,
+			})
+		)
+	end
+
+	return ui.row({
+		key = "search-" .. rowIndex,
+		gap = 8,
+		align = "center",
+		height = 30,
+		onClick = function()
+			runBookmark(entry)
+			onClose()
+			panel.close()
+		end,
+	}, children)
+end
+
 local function listView()
 	local list = activeList()
 	local children = {}
+
+	local searching = currentFolder == nil and noctalia.string.trim(searchQuery) ~= ""
 
 	if currentFolder ~= nil then
 		local folder = bookmarks[currentFolder]
@@ -345,6 +438,40 @@ local function listView()
 				}),
 			})
 		)
+	end
+
+	if currentFolder == nil then
+		table.insert(
+			children,
+			ui.input({
+				key = "search-input-" .. searchRev,
+				value = searchQuery,
+				placeholder = noctalia.tr("search_placeholder"),
+				controlSize = "sm",
+				onChange = "onSearchChanged",
+			})
+		)
+	end
+
+	if searching then
+		local results = searchBookmarks(searchQuery)
+		if #results == 0 then
+			table.insert(
+				children,
+				ui.label({
+					text = noctalia.tr("no_search_results"),
+					color = "on_surface_variant",
+					fontSize = 12,
+				})
+			)
+		else
+			local rows = {}
+			for rowIndex, result in ipairs(results) do
+				table.insert(rows, searchResultRow(result, rowIndex))
+			end
+			table.insert(children, ui.scroll({ flexGrow = 1, gap = 2 }, rows))
+		end
+		return ui.column({ gap = 10, padding = 14, flexGrow = 1 }, children)
 	end
 
 	local topButtons = {
@@ -816,6 +943,11 @@ function onToggleEditMode()
 	render()
 end
 
+function onSearchChanged(value)
+	searchQuery = value
+	render()
+end
+
 -- Drop callback for the bookmark list's drag-and-drop reordering.
 -- `payload` is the dragged row's original index (string, from
 -- ui.dragSource); `target` is "before|N" or "after|N" from the drop
@@ -879,6 +1011,8 @@ function onOpen(_context)
 	editingRoot = false
 	editMode = false
 	currentFolder = nil
+	searchQuery = ""
+	searchRev += 1
 	loadBookmarks()
 	noctalia.state.set("bookmarks_open", true)
 	render()
