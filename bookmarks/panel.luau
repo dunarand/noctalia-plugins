@@ -32,9 +32,20 @@ local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
 local draftLabel = ""
 local draftCmd = ""
+local draftRunInBackground = false
+local draftRunInTerminal = false
 local draftError = nil
 local editingIndex = nil -- nil = creating new, number = editing the entry at that index in the active list
 local editingRoot = false -- true when editingIndex refers to `bookmarks` (root) instead of activeList()
+
+-- Enforce strict booleans to satisfy ui.toggle's checked (bool) requirement.
+-- Handles native booleans, string coercions, and UI event objects.
+local function parseBool(val)
+	if type(val) == "table" then
+		return val.checked == true or val.value == true
+	end
+	return val == true or val == "true" or val == 1
+end
 
 -- Returns the array we're currently viewing/editing: root, or the open
 -- folder's items. Falls back to root if currentFolder points at something
@@ -127,7 +138,22 @@ local function runBookmark(entry)
 		return
 	end
 	local label = entry.label or cmd
-	local ok = noctalia.runAsync(cmd, function(result)
+
+	if parseBool(entry.runInTerminal) then
+		noctalia.runInTerminal(cmd)
+		return
+	end
+
+	local finalCmd = cmd
+	if parseBool(entry.runInBackground) then
+		finalCmd = "nohup " .. cmd .. " >/dev/null 2>&1 &"
+	end
+
+	local ok = noctalia.runAsync(finalCmd, function(result)
+		if parseBool(entry.runInBackground) then
+			return
+		end
+
 		if result.exitCode ~= 0 then
 			local detail = noctalia.string.trim(result.stderr or "")
 			local msg =
@@ -139,6 +165,7 @@ local function runBookmark(entry)
 		end
 		-- exitCode == 0: succeeded, no notification
 	end)
+
 	if not ok then
 		noctalia.notifyError(
 			noctalia.tr("title"),
@@ -233,7 +260,7 @@ local function entryRow(entry, index, total)
 				else
 					runBookmark(entry)
 					onClose()
-                    panel.close()
+					panel.close()
 				end
 			end,
 		}, {
@@ -327,6 +354,7 @@ local function listView()
 			})
 		)
 	end
+
 	table.insert(
 		topButtons,
 		ui.button({
@@ -339,6 +367,7 @@ local function listView()
 			onClick = "onToggleEditMode",
 		})
 	)
+
 	table.insert(children, ui.row({ gap = 8 }, topButtons))
 
 	if listError ~= nil then
@@ -440,6 +469,38 @@ local function formView()
 				onChange = "onCmdChange",
 			})
 		)
+
+		table.insert(
+			children,
+			ui.row({ gap = 8, align = "center" }, {
+				ui.toggle({
+					checked = draftRunInBackground,
+					enabled = true,
+					onChange = "onRunInBackgroundChange",
+				}),
+				ui.label({
+					text = noctalia.tr("run_in_background_field"),
+					fontSize = 13,
+					color = "on_surface",
+				}),
+			})
+		)
+
+		table.insert(
+			children,
+			ui.row({ gap = 8, align = "center" }, {
+				ui.toggle({
+					checked = draftRunInTerminal,
+					enabled = true,
+					onChange = "onRunInTerminalChange",
+				}),
+				ui.label({
+					text = noctalia.tr("run_in_terminal_field"),
+					fontSize = 13,
+					color = "on_surface",
+				}),
+			})
+		)
 	end
 
 	if draftError ~= nil then
@@ -480,6 +541,8 @@ function onNewBookmark()
 	draftGlyph = "bookmark"
 	draftLabel = ""
 	draftCmd = ""
+	draftRunInBackground = false
+	draftRunInTerminal = false
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -499,6 +562,8 @@ function onNewFolder()
 	draftGlyph = "folder"
 	draftLabel = ""
 	draftCmd = ""
+	draftRunInBackground = false
+	draftRunInTerminal = false
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -539,6 +604,8 @@ function onEditFolderHeader()
 	draftGlyph = entry.glyph or "folder"
 	draftLabel = entry.label or ""
 	draftCmd = ""
+	draftRunInBackground = false
+	draftRunInTerminal = false
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -589,6 +656,11 @@ function onEditEntry(index)
 	draftGlyph = entry.glyph or (draftKind == "folder" and "folder" or "bookmark")
 	draftLabel = entry.label or ""
 	draftCmd = entry.cmd or ""
+
+	-- Strictly enforce the native boolean type right from JSON initialization
+	draftRunInBackground = parseBool(entry.runInBackground)
+	draftRunInTerminal = parseBool(entry.runInTerminal)
+
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -612,6 +684,27 @@ end
 
 function onCmdChange(value)
 	draftCmd = value
+end
+
+function onRunInBackgroundChange(value)
+	-- Discard any UI objects or strings gracefully back into native booleans
+	draftRunInBackground = parseBool(value)
+	-- Mutually exclusive with "run in terminal": enabling one turns the
+	-- other off immediately, rather than letting both sit checked until
+	-- the form is reopened.
+	if draftRunInBackground then
+		draftRunInTerminal = false
+	end
+	render()
+end
+
+function onRunInTerminalChange(value)
+	-- Discard any UI objects or strings gracefully back into native booleans
+	draftRunInTerminal = parseBool(value)
+	if draftRunInTerminal then
+		draftRunInBackground = false
+	end
+	render()
 end
 
 function onSaveBookmark()
@@ -649,7 +742,14 @@ function onSaveBookmark()
 		end
 		newEntry = { type = "folder", glyph = glyph, label = label, items = previousItems or {} }
 	else
-		newEntry = { type = "bookmark", glyph = glyph, label = label, cmd = cmd }
+		newEntry = {
+			type = "bookmark",
+			glyph = glyph,
+			label = label,
+			cmd = cmd,
+			runInBackground = draftRunInBackground,
+			runInTerminal = draftRunInTerminal,
+		}
 	end
 
 	local previous = nil
