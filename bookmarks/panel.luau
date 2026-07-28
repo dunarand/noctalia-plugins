@@ -32,9 +32,20 @@ local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
 local draftLabel = ""
 local draftCmd = ""
+local draftRunInBackground = false
+local draftRunInTerminal = false
 local draftError = nil
 local editingIndex = nil -- nil = creating new, number = editing the entry at that index in the active list
 local editingRoot = false -- true when editingIndex refers to `bookmarks` (root) instead of activeList()
+
+-- Enforce strict booleans to satisfy ui.toggle's checked (bool) requirement.
+-- Handles native booleans, string coercions, and UI event objects.
+local function parseBool(val)
+	if type(val) == "table" then
+		return val.checked == true or val.value == true
+	end
+	return val == true or val == "true" or val == 1
+end
 
 -- Returns the array we're currently viewing/editing: root, or the open
 -- folder's items. Falls back to root if currentFolder points at something
@@ -97,23 +108,44 @@ local function saveBookmarks()
 	return true, nil
 end
 
--- Swaps the entry at `index` with its neighbor in `direction` (-1 up, 1
--- down) within the given list, then persists. No-ops silently at the
--- edges or on write failure (rolled back).
-local function moveEntry(list, index, direction)
-	local target = index + direction
-	if target < 1 or target > #list then
+-- Moves the entry currently at `fromIndex` so it sits immediately before
+-- `beforeIndex` (both 1-based, referring to positions in `list` before the
+-- move). `beforeIndex == #list + 1` means "move to the end". No-ops for a
+-- drop that wouldn't change order, and rolls back on write failure.
+local function moveEntryTo(list, fromIndex, beforeIndex)
+	if fromIndex < 1 or fromIndex > #list then
 		return
 	end
-	list[index], list[target] = list[target], list[index]
+	-- Dropping onto the gap immediately above or below your own row is a
+	-- no-op, not a "move to the other side of yourself".
+	if beforeIndex == fromIndex or beforeIndex == fromIndex + 1 then
+		return
+	end
+
+	local snapshot = {}
+	for i, v in ipairs(list) do
+		snapshot[i] = v
+	end
+
+	local moved = table.remove(list, fromIndex)
+	local insertAt = beforeIndex
+	if beforeIndex > fromIndex then
+		insertAt = beforeIndex - 1
+	end
+	table.insert(list, insertAt, moved)
+
 	local ok, err = saveBookmarks()
 	if not ok then
-		list[index], list[target] = list[target], list[index]
+		for i = #list, 1, -1 do
+			list[i] = nil
+		end
+		for i, v in ipairs(snapshot) do
+			list[i] = v
+		end
 		noctalia.notifyError(
 			noctalia.tr("title"),
 			noctalia.tr("err_reorder_failed", { error = err })
 		)
-		return
 	end
 end
 
@@ -127,7 +159,22 @@ local function runBookmark(entry)
 		return
 	end
 	local label = entry.label or cmd
-	local ok = noctalia.runAsync(cmd, function(result)
+
+	if parseBool(entry.runInTerminal) then
+		noctalia.runInTerminal(cmd)
+		return
+	end
+
+	local finalCmd = cmd
+	if parseBool(entry.runInBackground) then
+		finalCmd = "nohup " .. cmd .. " >/dev/null 2>&1 &"
+	end
+
+	local ok = noctalia.runAsync(finalCmd, function(result)
+		if parseBool(entry.runInBackground) then
+			return
+		end
+
 		if result.exitCode ~= 0 then
 			local detail = noctalia.string.trim(result.stderr or "")
 			local msg =
@@ -139,6 +186,7 @@ local function runBookmark(entry)
 		end
 		-- exitCode == 0: succeeded, no notification
 	end)
+
 	if not ok then
 		noctalia.notifyError(
 			noctalia.tr("title"),
@@ -147,32 +195,18 @@ local function runBookmark(entry)
 	end
 end
 
-local function reorderArrows(index, total)
-	return ui.column({ gap = 2, width = 16 }, {
-		ui.button({
-			glyph = "chevron-up",
-			variant = "ghost",
-			glyphSize = 10,
-			width = 16,
-			height = 15,
-			enabled = index > 1,
-			tooltip = noctalia.tr("move_up_tooltip"),
-			onClick = function()
-				onMoveEntry(index, -1)
-			end,
-		}),
-		ui.button({
-			glyph = "chevron-down",
-			variant = "ghost",
-			glyphSize = 10,
-			width = 16,
-			height = 15,
-			enabled = index < total,
-			tooltip = noctalia.tr("move_down_tooltip"),
-			onClick = function()
-				onMoveEntry(index, 1)
-			end,
-		}),
+-- Thin insertion-point drop zone rendered between rows (and before the
+-- first / after the last). `place` is "before"/"after" relative to
+-- `anchorIndex`, encoded into `value` for onReorderEntry to decode.
+local function insertionGap(anchorIndex, place)
+	return ui.dropZone({
+		key = "gap-" .. place .. "-" .. anchorIndex,
+		accepts = { "bookmark-entry" },
+		value = place .. "|" .. anchorIndex,
+		onDrop = "onReorderEntry",
+		height = 6,
+		expandOnDrag = true,
+		hitSlop = 20,
 	})
 end
 
@@ -218,7 +252,21 @@ local function entryRow(entry, index, total)
 
 	local rowChildren = {}
 	if editMode then
-		table.insert(rowChildren, reorderArrows(index, total))
+		table.insert(
+			rowChildren,
+			ui.dragSource({
+				key = "grip-" .. index,
+				dragType = "bookmark-entry",
+				payload = tostring(index),
+				previewAncestor = 1,
+				liftFromLayout = true,
+				tooltip = noctalia.tr("drag_tooltip"),
+				width = 16,
+				height = 16,
+			}, {
+				ui.glyph({ name = "grip-vertical", size = 14, color = "on_surface_variant" }),
+			})
+		)
 	end
 
 	table.insert(
@@ -233,7 +281,7 @@ local function entryRow(entry, index, total)
 				else
 					runBookmark(entry)
 					onClose()
-                    panel.close()
+					panel.close()
 				end
 			end,
 		}, {
@@ -256,7 +304,7 @@ local function entryRow(entry, index, total)
 		table.insert(rowChildren, node)
 	end
 
-	return ui.row({ key = "bm-" .. index, gap = 8, align = "center" }, rowChildren)
+	return ui.row({ key = "bm-" .. index, gap = 8, align = "center", height = 30 }, rowChildren)
 end
 
 local function listView()
@@ -327,6 +375,7 @@ local function listView()
 			})
 		)
 	end
+
 	table.insert(
 		topButtons,
 		ui.button({
@@ -339,6 +388,7 @@ local function listView()
 			onClick = "onToggleEditMode",
 		})
 	)
+
 	table.insert(children, ui.row({ gap = 8 }, topButtons))
 
 	if listError ~= nil then
@@ -354,10 +404,17 @@ local function listView()
 		)
 	else
 		local rows = {}
+		local count = #list
 		for index, entry in ipairs(list) do
-			table.insert(rows, entryRow(entry, index, #list))
+			if editMode then
+				table.insert(rows, insertionGap(index, "before"))
+			end
+			table.insert(rows, entryRow(entry, index, count))
 		end
-		table.insert(children, ui.scroll({ flexGrow = 1, gap = 4 }, rows))
+		if editMode and count > 0 then
+			table.insert(rows, insertionGap(count, "after"))
+		end
+		table.insert(children, ui.scroll({ flexGrow = 1, gap = 2 }, rows))
 	end
 
 	if currentFolder ~= nil then
@@ -440,6 +497,38 @@ local function formView()
 				onChange = "onCmdChange",
 			})
 		)
+
+		table.insert(
+			children,
+			ui.row({ gap = 8, align = "center" }, {
+				ui.toggle({
+					checked = draftRunInBackground,
+					enabled = true,
+					onChange = "onRunInBackgroundChange",
+				}),
+				ui.label({
+					text = noctalia.tr("run_in_background_field"),
+					fontSize = 13,
+					color = "on_surface",
+				}),
+			})
+		)
+
+		table.insert(
+			children,
+			ui.row({ gap = 8, align = "center" }, {
+				ui.toggle({
+					checked = draftRunInTerminal,
+					enabled = true,
+					onChange = "onRunInTerminalChange",
+				}),
+				ui.label({
+					text = noctalia.tr("run_in_terminal_field"),
+					fontSize = 13,
+					color = "on_surface",
+				}),
+			})
+		)
 	end
 
 	if draftError ~= nil then
@@ -480,6 +569,8 @@ function onNewBookmark()
 	draftGlyph = "bookmark"
 	draftLabel = ""
 	draftCmd = ""
+	draftRunInBackground = false
+	draftRunInTerminal = false
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -499,6 +590,8 @@ function onNewFolder()
 	draftGlyph = "folder"
 	draftLabel = ""
 	draftCmd = ""
+	draftRunInBackground = false
+	draftRunInTerminal = false
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -539,6 +632,8 @@ function onEditFolderHeader()
 	draftGlyph = entry.glyph or "folder"
 	draftLabel = entry.label or ""
 	draftCmd = ""
+	draftRunInBackground = false
+	draftRunInTerminal = false
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -589,6 +684,11 @@ function onEditEntry(index)
 	draftGlyph = entry.glyph or (draftKind == "folder" and "folder" or "bookmark")
 	draftLabel = entry.label or ""
 	draftCmd = entry.cmd or ""
+
+	-- Strictly enforce the native boolean type right from JSON initialization
+	draftRunInBackground = parseBool(entry.runInBackground)
+	draftRunInTerminal = parseBool(entry.runInTerminal)
+
 	draftError = nil
 	formRev += 1
 	view = "new"
@@ -612,6 +712,27 @@ end
 
 function onCmdChange(value)
 	draftCmd = value
+end
+
+function onRunInBackgroundChange(value)
+	-- Discard any UI objects or strings gracefully back into native booleans
+	draftRunInBackground = parseBool(value)
+	-- Mutually exclusive with "run in terminal": enabling one turns the
+	-- other off immediately, rather than letting both sit checked until
+	-- the form is reopened.
+	if draftRunInBackground then
+		draftRunInTerminal = false
+	end
+	render()
+end
+
+function onRunInTerminalChange(value)
+	-- Discard any UI objects or strings gracefully back into native booleans
+	draftRunInTerminal = parseBool(value)
+	if draftRunInTerminal then
+		draftRunInBackground = false
+	end
+	render()
 end
 
 function onSaveBookmark()
@@ -649,7 +770,14 @@ function onSaveBookmark()
 		end
 		newEntry = { type = "folder", glyph = glyph, label = label, items = previousItems or {} }
 	else
-		newEntry = { type = "bookmark", glyph = glyph, label = label, cmd = cmd }
+		newEntry = {
+			type = "bookmark",
+			glyph = glyph,
+			label = label,
+			cmd = cmd,
+			runInBackground = draftRunInBackground,
+			runInTerminal = draftRunInTerminal,
+		}
 	end
 
 	local previous = nil
@@ -688,9 +816,25 @@ function onToggleEditMode()
 	render()
 end
 
-function onMoveEntry(index, direction)
+-- Drop callback for the bookmark list's drag-and-drop reordering.
+-- `payload` is the dragged row's original index (string, from
+-- ui.dragSource); `target` is "before|N" or "after|N" from the drop
+-- zone's `value`, N being the anchor row's index at render time.
+function onReorderEntry(payload, target)
+	local fromIndex = tonumber(payload)
+	local place, anchorText = target:match("^([^|]+)|(.+)$")
+	local anchorIndex = tonumber(anchorText)
+	if fromIndex == nil or anchorIndex == nil then
+		return
+	end
+
+	local beforeIndex = anchorIndex
+	if place == "after" then
+		beforeIndex = anchorIndex + 1
+	end
+
 	local list = activeList()
-	moveEntry(list, index, direction)
+	moveEntryTo(list, fromIndex, beforeIndex)
 	render()
 end
 
