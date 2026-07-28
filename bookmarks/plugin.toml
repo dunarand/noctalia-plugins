@@ -1,14 +1,22 @@
 id           = "dunarand/bookmarks"
 name         = "Bookmarks"
-version      = "0.3.1"
+version      = "0.3.3"
 min_noctalia = "5.0.0"
 plugin_api   = 13
 author       = "dunarand"
 license      = "MIT"
 icon         = "bookmark"
 description  = "A user-defined list of bookmarks. Each item has a label, a glyph, and a shell command."
-tags         = ["launcher", "productivity", "utility"]
+tags         = ["launcher", "panel", "productivity", "utility", "widget"]
 dependencies = []
+
+[[setting]]
+key             = "data_path"
+type            = "file"
+label_key       = "settings.data_path.label"
+description_key = "settings.data_path.description"
+default         = ""
+extensions      = [".json"]
 
 [[widget]]
 id    = "bar"
@@ -43,4 +51,3 @@ height          = 470
 placement       = "attached"
 position        = "auto"
 open_near_click = true
-capture_keys    = ["enter", "up", "down", "ctrl+n", "ctrl+p"]
