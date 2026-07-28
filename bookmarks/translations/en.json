@@ -3,6 +3,8 @@
   "new_bookmark": "New Bookmark",
   "edit_bookmark": "Edit Bookmark",
   "no_bookmarks": "No bookmarks yet",
+  "search_placeholder": "Search bookmarks...",
+  "no_search_results": "No matching bookmarks",
   "new_folder": "New Folder",
   "delete_folder_button": "Delete folder",
   "edit_folder": "Edit Folder",
