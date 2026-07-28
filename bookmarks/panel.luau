@@ -38,6 +38,7 @@ local draftKind = "bookmark" -- "bookmark" | "folder", set when the form opens
 local draftGlyph = "bookmark"
 local draftLabel = ""
 local draftCmd = ""
+local draftDescription = ""
 local draftRunInBackground = false
 local draftRunInTerminal = false
 local draftError = nil
@@ -324,7 +325,27 @@ local function entryRow(entry, index, total)
 				end,
 			})
 		)
-	elseif editMode then
+	elseif not editMode and parseBool(noctalia.getConfig("show_info_button")) then
+		local description = noctalia.string.trim(entry.description or "")
+		local cmd = entry.cmd or ""
+		local infoTooltip = noctalia.tr("info_cmd_line", { cmd = cmd })
+		if description ~= "" then
+			infoTooltip = infoTooltip
+				.. "\n"
+				.. noctalia.tr("info_description_line", { description = description })
+		end
+		table.insert(
+			trailing,
+			ui.button({
+				glyph = "help-circle",
+				variant = "ghost",
+				controlSize = "sm",
+				tooltip = infoTooltip,
+				onClick = function() end,
+			})
+		)
+	end
+	if not isFolder and editMode then
 		trailing = {
 			ui.button({
 				glyph = "pencil",
@@ -707,6 +728,17 @@ local function formView()
 
 		table.insert(
 			children,
+			ui.input({
+				key = "description-input-" .. formRev,
+				value = draftDescription,
+				placeholder = noctalia.tr("description_field"),
+				controlSize = "sm",
+				onChange = "onDescriptionChange",
+			})
+		)
+
+		table.insert(
+			children,
 			ui.row({ gap = 8, align = "center" }, {
 				ui.toggle({
 					checked = draftRunInBackground,
@@ -776,6 +808,7 @@ function onNewBookmark()
 	draftGlyph = "bookmark"
 	draftLabel = ""
 	draftCmd = ""
+	draftDescription = ""
 	draftRunInBackground = false
 	draftRunInTerminal = false
 	draftError = nil
@@ -893,6 +926,7 @@ function onEditEntry(index)
 	draftGlyph = entry.glyph or (draftKind == "folder" and "folder" or "bookmark")
 	draftLabel = entry.label or ""
 	draftCmd = entry.cmd or ""
+	draftDescription = entry.description or ""
 
 	-- Strictly enforce the native boolean type right from JSON initialization
 	draftRunInBackground = parseBool(entry.runInBackground)
@@ -922,6 +956,10 @@ end
 
 function onCmdChange(value)
 	draftCmd = value
+end
+
+function onDescriptionChange(value)
+	draftDescription = value
 end
 
 function onRunInBackgroundChange(value)
@@ -985,6 +1023,7 @@ function onSaveBookmark()
 			glyph = glyph,
 			label = label,
 			cmd = cmd,
+			description = noctalia.string.trim(draftDescription),
 			runInBackground = draftRunInBackground,
 			runInTerminal = draftRunInTerminal,
 		}
