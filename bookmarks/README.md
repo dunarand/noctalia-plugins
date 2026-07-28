@@ -6,10 +6,13 @@ execute. All of it is user defined, stored in a JSON file you can backup.
 
 ## Plugin
 
-| Field   | Value                |
-| ------- | -------------------- |
-| ID      | `dunarand/bookmarks` |
-| Entries | panel: `panel`;      |
+| Field   | Value                              |
+| ------- | ---------------------------------- |
+| ID      | `dunarand/bookmarks`               |
+| Entries | Bar widget: `bar`; panel: `panel`; |
+
+Bar widget `bar` is not required. Instead, you can assign a keybind to directly open the `panel`,
+which is shown in the Usage section.
 
 ## Requirements
 
@@ -26,6 +29,15 @@ hl.bind(
     hl.dsp.exec_cmd("noctalia msg panel-toggle dunarand/bookmarks:panel")
 )
 ```
+
+You can interact with the bookmarks list via keybinds:
+
+| Keybind                  | Purpose                                                          |
+| ------------------------ | ---------------------------------------------------------------- |
+| `CTRL + N` or Down Arrow | Select the next (below) item                                     |
+| `CTRL + P` or Up Arrow   | Select the previous (above) item                                 |
+| `CTRL + S`               | Search bookmarks                                                 |
+| `Enter` / `Return`       | Execute the selected bookmark's command / Navigate into a folder |
 
 - Bookmarks and folders are listed in the main panel.
 
