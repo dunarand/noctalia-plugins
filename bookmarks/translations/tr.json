@@ -4,6 +4,8 @@
   "edit_bookmark": "Yer İmini Düzenle",
   "no_bookmarks": "Henüz bir yer imi yok",
   "new_folder": "Yeni Klasör",
+  "search_placeholder": "Yer imlerinde ara...",
+  "no_search_results": "Eşleşen yer imi yok",
   "delete_folder_button": "Klasörü Sil",
   "edit_folder": "Klasörü Düzenle",
   "folder_name_field": "Klasör ismi",
