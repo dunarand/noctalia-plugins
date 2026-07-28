@@ -21,6 +21,9 @@
   "glyph_field": "Sembol (ör. bookmark)",
   "label_field": "İsim etiketi",
   "cmd_field": "Shell Komutu",
+  "description_field": "Açıklama (İsteğe bağlı)",
+  "info_cmd_line": "Komut: {cmd}",
+  "info_description_line": "Açıklama: {description}",
   "run_in_background_field": "Arkaplanda çalıştır",
   "run_in_terminal_field": "Konsolda çalıştır",
   "err_read_failed": "Yer imleri okunamadı: {error}",
@@ -53,6 +56,10 @@
     "data_path": {
       "label": "Veri dosyası",
       "description": "data.json dosyasının saklandığı konum. Varsayılan eklenti veri konumunu kullanmak için boş bırakın."
+    },
+    "show_info_button": {
+      "label": "Bilgi butonunu göster",
+      "description": "Yer imlerinde (klasörlerde değil) üzerine gelindiğinde açıklamalarını ve komutlarını görüntülemek için bir \"?\" düğmesi göster."
     }
   }
 }
