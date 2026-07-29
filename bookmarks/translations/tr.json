@@ -14,7 +14,6 @@
   "edit_tooltip": "Düzenle",
   "delete_tooltip": "Sil",
   "drag_tooltip": "Sıralamak için sürükle veya bir klasörün içine bırak",
-  "drop_into_folder_tooltip": "Yer imini klasöre yerleştirmek için buraya bırak",
   "drop_out_of_folder": "Ana panele göndermek için buraya bırak",
   "show_controls_tooltip": "Sıralama/düzenleme/silme kontrollerini göster",
   "hide_controls_tooltip": "Sıralama/düzenleme/silme kontrollerini gizle",

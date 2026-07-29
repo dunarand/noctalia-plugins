@@ -14,7 +14,6 @@
   "edit_tooltip": "Edit",
   "delete_tooltip": "Delete",
   "drag_tooltip": "Drag to reorder, or onto a folder to file it inside",
-  "drop_into_folder_tooltip": "Drop a bookmark here to file it into this folder",
   "drop_out_of_folder": "Drop here to move back to the main panel",
   "show_controls_tooltip": "Show reorder/edit/delete controls",
   "hide_controls_tooltip": "Hide reorder/edit/delete controls",
