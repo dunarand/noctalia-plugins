@@ -76,8 +76,9 @@ end
 -- Fuzzy-searches bookmark labels only (not commands, not folder names)
 -- across root and every folder's contents, using Noctalia's native
 -- matcher. Returns results sorted best-match-first, each as
--- { entry, path, folderIndex, index }, where folderIndex/index locate the
--- entry for running/editing it (folderIndex = nil for root entries).
+-- { entry, path }, where path is the containing folder's label (nil for
+-- root entries). Search results are only ever run, never edited in place,
+-- so no index back into `bookmarks` is kept.
 local function searchBookmarks(query)
 	local trimmed = noctalia.string.trim(query)
 	if trimmed == "" then
@@ -85,32 +86,23 @@ local function searchBookmarks(query)
 	end
 
 	local results = {}
-	for index, entry in ipairs(bookmarks) do
+	for _, entry in ipairs(bookmarks) do
 		if entryType(entry) == "folder" then
-			for subIndex, subEntry in ipairs(entry.items or {}) do
+			for _, subEntry in ipairs(entry.items or {}) do
 				if entryType(subEntry) ~= "folder" then
 					local score = noctalia.fuzzyScore(trimmed, subEntry.label or "")
 					if score ~= nil then
-						table.insert(results, {
-							entry = subEntry,
-							path = entry.label or "",
-							folderIndex = index,
-							index = subIndex,
-							score = score,
-						})
+						table.insert(
+							results,
+							{ entry = subEntry, path = entry.label or "", score = score }
+						)
 					end
 				end
 			end
 		else
 			local score = noctalia.fuzzyScore(trimmed, entry.label or "")
 			if score ~= nil then
-				table.insert(results, {
-					entry = entry,
-					path = nil,
-					folderIndex = nil,
-					index = index,
-					score = score,
-				})
+				table.insert(results, { entry = entry, path = nil, score = score })
 			end
 		end
 	end
@@ -162,6 +154,25 @@ local function saveBookmarks()
 	return true, nil
 end
 
+local function snapshotArray(list)
+	local copy = {}
+	for i, v in ipairs(list) do
+		copy[i] = v
+	end
+	return copy
+end
+
+-- Replaces `list`'s contents in place with `snapshot`'s, used to roll back
+-- a move when saveBookmarks() fails partway through.
+local function restoreArray(list, snapshot)
+	for i = #list, 1, -1 do
+		list[i] = nil
+	end
+	for i, v in ipairs(snapshot) do
+		list[i] = v
+	end
+end
+
 -- Moves the entry currently at `fromIndex` so it sits immediately before
 -- `beforeIndex` (both 1-based, referring to positions in `list` before the
 -- move). `beforeIndex == #list + 1` means "move to the end". No-ops for a
@@ -176,10 +187,7 @@ local function moveEntryTo(list, fromIndex, beforeIndex)
 		return
 	end
 
-	local snapshot = {}
-	for i, v in ipairs(list) do
-		snapshot[i] = v
-	end
+	local snapshot = snapshotArray(list)
 
 	local moved = table.remove(list, fromIndex)
 	local insertAt = beforeIndex
@@ -190,17 +198,41 @@ local function moveEntryTo(list, fromIndex, beforeIndex)
 
 	local ok, err = saveBookmarks()
 	if not ok then
-		for i = #list, 1, -1 do
-			list[i] = nil
-		end
-		for i, v in ipairs(snapshot) do
-			list[i] = v
-		end
+		restoreArray(list, snapshot)
 		noctalia.notifyError(
 			noctalia.tr("title"),
 			noctalia.tr("err_reorder_failed", { error = err })
 		)
 	end
+end
+
+-- Moves a single bookmark (never a folder - nesting stays one level deep)
+-- from `fromList` at `fromIndex` onto the end of `toList`. Used for both
+-- directions of filing: root -> into a folder, and folder -> back to root.
+-- Rolls back both lists on write failure, same pattern as moveEntryTo.
+local function moveEntryAcross(fromList, fromIndex, toList)
+	local entry = fromList[fromIndex]
+	if entry == nil or entryType(entry) ~= "bookmark" then
+		return false
+	end
+
+	local fromSnapshot = snapshotArray(fromList)
+	local toSnapshot = snapshotArray(toList)
+
+	table.remove(fromList, fromIndex)
+	table.insert(toList, entry)
+
+	local ok, err = saveBookmarks()
+	if not ok then
+		restoreArray(fromList, fromSnapshot)
+		restoreArray(toList, toSnapshot)
+		noctalia.notifyError(
+			noctalia.tr("title"),
+			noctalia.tr("err_reorder_failed", { error = err })
+		)
+		return false
+	end
+	return true, entry
 end
 
 -- Runs a bookmark's command. Two distinct failure paths get a notification:
@@ -249,18 +281,83 @@ local function runBookmark(entry)
 	end
 end
 
+-- Runs a bookmark and closes the panel, the standard "user picked a
+-- bookmark" action shared by every activation path (rows, search results,
+-- keyboard Enter).
+local function runAndClose(entry)
+	runBookmark(entry)
+	onClose()
+	panel.close()
+end
+
 -- Thin insertion-point drop zone rendered between rows (and before the
 -- first / after the last). `place` is "before"/"after" relative to
--- `anchorIndex`, encoded into `value` for onReorderEntry to decode.
+-- `anchorIndex`, encoded into `value` for _onReorderEntry to decode.
 local function insertionGap(anchorIndex, place)
 	return ui.dropZone({
 		key = "gap-" .. place .. "-" .. anchorIndex,
 		accepts = { "bookmark-entry" },
 		value = place .. "|" .. anchorIndex,
-		onDrop = "onReorderEntry",
+		onDrop = "_onReorderEntry",
 		height = 6,
 		expandOnDrag = true,
 		hitSlop = 20,
+	})
+end
+
+-- Wraps a folder row so the whole row (root view only) doubles as a drop
+-- target: dropping a bookmark onto it files that bookmark into the folder,
+-- appended at the end. `value` is "into|<folderIndex>", read by
+-- _onReorderEntry alongside the "before|after" insertion-gap values already
+-- in use for same-list reordering. `hitSlop` matters here: the insertion
+-- gaps immediately above/below this row extend their own hit area well
+-- past their thin visible strip (see insertionGap), so without a
+-- competing hitSlop of its own this zone would rarely win a drop even
+-- when the pointer is squarely over the folder row - "closest wins" needs
+-- both zones actually in the running.
+local function folderDropTarget(folderIndex, child)
+	return ui.dropZone({
+		key = "into-" .. folderIndex,
+		accepts = { "bookmark-entry" },
+		value = "into|" .. folderIndex,
+		onDrop = "_onReorderEntry",
+		direction = "column",
+		radius = 8,
+		border = "primary/0.45",
+		borderWidth = 1.5,
+		expandOnDrag = true,
+		hitSlop = 20,
+	}, { child })
+end
+
+-- Persistent drop bar shown at the top of a folder's contents while in edit
+-- mode: dropping a bookmark here pulls it back out to the root list,
+-- appended at the end. Always present (not just an insertion gap) so an
+-- otherwise-empty folder still offers a way to release an item back out.
+local function moveToRootDropBar()
+	return ui.dropZone({
+		key = "move-to-root",
+		accepts = { "bookmark-entry" },
+		value = "out|root",
+		onDrop = "_onReorderEntry",
+		direction = "row",
+		align = "center",
+		gap = 8,
+		height = 34,
+		radius = 8,
+		fill = "primary/0.08",
+		border = "primary/0.35",
+		borderWidth = 1.5,
+		expandOnDrag = true,
+		hitSlop = 12,
+	}, {
+		ui.glyph({ name = "corner-left-up", size = 14, color = "primary" }),
+		ui.label({
+			text = noctalia.tr("drop_out_of_folder"),
+			fontSize = 12,
+			color = "primary",
+			flexGrow = 1,
+		}),
 	})
 end
 
@@ -293,17 +390,13 @@ local function activateRow(row)
 		return
 	end
 	if row.kind == "search" then
-		runBookmark(row.result.entry)
-		onClose()
-		panel.close()
+		runAndClose(row.result.entry)
 		return
 	end
 	if entryType(row.entry) == "folder" then
-		onOpenFolder(row.index)
+		_onOpenFolder(row.index)
 	else
-		runBookmark(row.entry)
-		onClose()
-		panel.close()
+		runAndClose(row.entry)
 	end
 end
 
@@ -320,7 +413,7 @@ local function entryRow(entry, index)
 				controlSize = "sm",
 				tooltip = noctalia.tr("open_tooltip"),
 				onClick = function()
-					onOpenFolder(index)
+					_onOpenFolder(index)
 				end,
 			})
 		)
@@ -352,7 +445,7 @@ local function entryRow(entry, index)
 				controlSize = "sm",
 				tooltip = noctalia.tr("edit_tooltip"),
 				onClick = function()
-					onEditEntry(index)
+					_onEditEntry(index)
 				end,
 			}),
 			ui.button({
@@ -361,12 +454,57 @@ local function entryRow(entry, index)
 				controlSize = "sm",
 				tooltip = noctalia.tr("delete_tooltip"),
 				onClick = function()
-					onDeleteEntry(index)
+					_onDeleteEntry(index)
 				end,
 			}),
 		}
 	end
 
+	local isSelected = selectedIndex == index
+	local activateEntry = function()
+		if isFolder then
+			_onOpenFolder(index)
+		else
+			runAndClose(entry)
+		end
+	end
+
+	-- In edit mode a folder's glyph sits in a filled chip rather than bare,
+	-- the same visual language as the move-to-root drop bar (filled
+	-- primary/border), so "this accepts a dropped bookmark" reads at a
+	-- glance instead of only revealing itself once a drag is already
+	-- underway and the host's own highlight kicks in.
+	-- Note: ui.box does not render child content (its documented props are
+	-- fill/radius/border/size only), so the chip wrapper uses ui.row -
+	-- which supports both children and the same fill/radius styling - with
+	-- align/justify = "center" to center the glyph inside it.
+	local folderGlyph = ui.glyph({
+		name = entry.glyph or (isFolder and "folder" or "bookmark"),
+		size = 16,
+		color = (isFolder and editMode) and "primary" or "on_surface",
+	})
+	if isFolder and editMode then
+		folderGlyph = ui.row({
+			fill = "primary/0.12",
+			radius = 6,
+			width = 24,
+			height = 24,
+			align = "center",
+			justify = "center",
+		}, { folderGlyph })
+	end
+
+	-- Flat, single-level row: grip, glyph, label, and trailing controls are
+	-- all direct children of "bm-<index>", the same node that sits as a
+	-- sibling of the insertion gaps in the `rows` array built by listView.
+	-- This matters for previewAncestor/liftFromLayout below - they walk up
+	-- from the dragSource by ancestor count, so the drag source needs to be
+	-- exactly one level under the node that's actually a gap's neighbor in
+	-- the list. An earlier version wrapped glyph+label in their own nested
+	-- sub-row; liftFromLayout then only collapsed that inner wrapper while
+	-- the outer list-item row (the real gap sibling) stayed in layout as a
+	-- leftover sliver next to the real gap - reading as two highlightable
+	-- spaces where the dragged row used to be instead of one.
 	local rowChildren = {}
 	if editMode then
 		table.insert(
@@ -385,55 +523,43 @@ local function entryRow(entry, index)
 			})
 		)
 	end
-
-	local isSelected = selectedIndex == index
-	local activateEntry = function()
-		if isFolder then
-			onOpenFolder(index)
-		else
-			runBookmark(entry)
-			onClose()
-			panel.close()
-		end
-	end
+	table.insert(rowChildren, folderGlyph)
 	table.insert(
 		rowChildren,
-		ui.row({
-			key = "bm-main-" .. index,
-			gap = 8,
-			align = "center",
+		ui.label({
+			text = entry.label or "",
+			fontSize = 13,
+			color = isSelected and "primary" or "on_surface",
+			fontWeight = isSelected and "bold" or "regular",
 			flexGrow = 1,
-			height = 30,
-			tooltip = (not isFolder) and entry.cmd or nil,
-			onClick = activateEntry,
-			onHover = function(state)
-				if state == "true" then
-					selectedIndex = index
-					render()
-				end
-			end,
-		}, {
-			ui.glyph({
-				name = entry.glyph or (isFolder and "folder" or "bookmark"),
-				size = 16,
-				color = "on_surface",
-			}),
-			ui.label({
-				text = entry.label or "",
-				fontSize = 13,
-				color = isSelected and "primary" or "on_surface",
-				fontWeight = isSelected and "bold" or "regular",
-				flexGrow = 1,
-				maxLines = 1,
-			}),
+			maxLines = 1,
 		})
 	)
-
 	for _, node in ipairs(trailing) do
 		table.insert(rowChildren, node)
 	end
 
-	return ui.row({ key = "bm-" .. index, gap = 8, align = "center", height = 30 }, rowChildren)
+	local row = ui.row({
+		key = "bm-" .. index,
+		gap = 8,
+		align = "center",
+		height = 30,
+		onClick = activateEntry,
+		onHover = function(state)
+			if state == "true" then
+				selectedIndex = index
+				render()
+			end
+		end,
+	}, rowChildren)
+
+	-- Only root-level folders accept drops (nesting stays one level deep,
+	-- and folders never contain other folders), and only while edit mode
+	-- exposes drag handles at all.
+	if isFolder and editMode and currentFolder == nil then
+		return folderDropTarget(index, row)
+	end
+	return row
 end
 
 -- One row in the flat search results list: runs the bookmark on click,
@@ -443,9 +569,7 @@ local function searchResultRow(result, rowIndex)
 	local entry = result.entry
 	local isSelected = selectedIndex == rowIndex
 	local runEntry = function()
-		runBookmark(entry)
-		onClose()
-		panel.close()
+		runAndClose(entry)
 	end
 
 	local children = {
@@ -510,13 +634,13 @@ local function listView()
 					variant = "ghost",
 					controlSize = "sm",
 					tooltip = noctalia.tr("back_button"),
-					onClick = "onBackToRoot",
+					onClick = "_onBackToRoot",
 				}),
 				ui.row({
 					gap = 6,
 					align = "center",
 					flexGrow = 1,
-					onClick = "onEditFolderHeader",
+					onClick = "_onEditFolderHeader",
 				}, {
 					ui.glyph({
 						name = "pencil",
@@ -547,8 +671,8 @@ local function listView()
 				placeholder = noctalia.tr("search_placeholder"),
 				controlSize = "sm",
 				focus = wantsFocus,
-				onChange = "onSearchChanged",
-				onSubmit = "onSearchSubmit",
+				onChange = "_onSearchChanged",
+				onSubmit = "_onSearchSubmit",
 			})
 		)
 	end
@@ -582,7 +706,7 @@ local function listView()
 			variant = "primary",
 			flexGrow = 1,
 			enabled = path ~= nil,
-			onClick = "onNewBookmark",
+			onClick = "_onNewBookmark",
 		}),
 	}
 	-- Folders can only be created at root: one level of nesting only. The
@@ -598,7 +722,7 @@ local function listView()
 				variant = "secondary",
 				flexGrow = 1,
 				enabled = path ~= nil,
-				onClick = "onNewFolder",
+				onClick = "_onNewFolder",
 			})
 		)
 	end
@@ -612,11 +736,19 @@ local function listView()
 			controlSize = "sm",
 			width = 32,
 			tooltip = noctalia.tr(editMode and "hide_controls_tooltip" or "show_controls_tooltip"),
-			onClick = "onToggleEditMode",
+			onClick = "_onToggleEditMode",
 		})
 	)
 
 	table.insert(children, ui.row({ gap = 8 }, topButtons))
+
+	-- Inside a folder, edit mode always offers a way to drop a bookmark back
+	-- out to root - including when the folder is currently empty, so it
+	-- stays a valid drag target rather than disappearing along with the
+	-- "no bookmarks" message.
+	if currentFolder ~= nil and editMode then
+		table.insert(children, moveToRootDropBar())
+	end
 
 	if listError ~= nil then
 		table.insert(children, ui.label({ text = listError, color = "error", fontSize = 12 }))
@@ -652,7 +784,7 @@ local function listView()
 				text = noctalia.tr("delete_folder_button"),
 				glyph = "trash",
 				variant = "destructive",
-				onClick = "onDeleteFolder",
+				onClick = "_onDeleteFolder",
 			})
 		)
 	end
@@ -682,7 +814,7 @@ local function formView()
 				glyph = "close",
 				variant = "ghost",
 				tooltip = noctalia.tr("cancel_button"),
-				onClick = "onCancelBookmark",
+				onClick = "_onCancelBookmark",
 			}),
 		}),
 
@@ -698,7 +830,7 @@ local function formView()
 				placeholder = noctalia.tr("glyph_field"),
 				controlSize = "sm",
 				flexGrow = 1,
-				onChange = "onGlyphChange",
+				onChange = "_onGlyphChange",
 			}),
 		}),
 
@@ -709,7 +841,7 @@ local function formView()
 				or noctalia.tr("label_field"),
 			controlSize = "sm",
 			focus = true,
-			onChange = "onLabelChange",
+			onChange = "_onLabelChange",
 		}),
 	}
 
@@ -721,7 +853,7 @@ local function formView()
 				value = draftCmd,
 				placeholder = noctalia.tr("cmd_field"),
 				controlSize = "sm",
-				onChange = "onCmdChange",
+				onChange = "_onCmdChange",
 			})
 		)
 
@@ -732,7 +864,7 @@ local function formView()
 				value = draftDescription,
 				placeholder = noctalia.tr("description_field"),
 				controlSize = "sm",
-				onChange = "onDescriptionChange",
+				onChange = "_onDescriptionChange",
 			})
 		)
 
@@ -742,7 +874,7 @@ local function formView()
 				ui.toggle({
 					checked = draftRunInBackground,
 					enabled = true,
-					onChange = "onRunInBackgroundChange",
+					onChange = "_onRunInBackgroundChange",
 				}),
 				ui.label({
 					text = noctalia.tr("run_in_background_field"),
@@ -758,7 +890,7 @@ local function formView()
 				ui.toggle({
 					checked = draftRunInTerminal,
 					enabled = true,
-					onChange = "onRunInTerminalChange",
+					onChange = "_onRunInTerminalChange",
 				}),
 				ui.label({
 					text = noctalia.tr("run_in_terminal_field"),
@@ -779,12 +911,12 @@ local function formView()
 			ui.button({
 				text = noctalia.tr("save_button"),
 				variant = "primary",
-				onClick = "onSaveBookmark",
+				onClick = "_onSaveBookmark",
 			}),
 			ui.button({
 				text = noctalia.tr("cancel_button"),
 				variant = "destructive",
-				onClick = "onCancelBookmark",
+				onClick = "_onCancelBookmark",
 			}),
 		})
 	)
@@ -800,7 +932,7 @@ function render()
 	end
 end
 
-function onNewBookmark()
+function _onNewBookmark()
 	editingIndex = nil
 	editingRoot = false
 	draftKind = "bookmark"
@@ -816,7 +948,7 @@ function onNewBookmark()
 	render()
 end
 
-function onNewFolder()
+function _onNewFolder()
 	-- Folders are root-only (one level of nesting), so this should be
 	-- unreachable while inside a folder, but guard anyway since it's
 	-- reached via a button click, not just render-time gating.
@@ -838,7 +970,7 @@ function onNewFolder()
 	render()
 end
 
-function onOpenFolder(index)
+function _onOpenFolder(index)
 	local list = activeList()
 	local entry = list[index]
 	if entry == nil or entryType(entry) ~= "folder" then
@@ -851,7 +983,7 @@ function onOpenFolder(index)
 	render()
 end
 
-function onBackToRoot()
+function _onBackToRoot()
 	currentFolder = nil
 	selectedIndex = 1
 	render()
@@ -860,7 +992,7 @@ end
 -- Editing the currently open folder's own name/glyph: the folder entry
 -- lives in root `bookmarks` at `currentFolder`, not in activeList() (which
 -- is the folder's *contents*), so this goes through root explicitly.
-function onEditFolderHeader()
+function _onEditFolderHeader()
 	if currentFolder == nil then
 		return
 	end
@@ -883,7 +1015,7 @@ function onEditFolderHeader()
 	render()
 end
 
-function onDeleteFolder()
+function _onDeleteFolder()
 	if currentFolder == nil then
 		return
 	end
@@ -915,7 +1047,7 @@ function onDeleteFolder()
 	render()
 end
 
-function onEditEntry(index)
+function _onEditEntry(index)
 	local list = activeList()
 	editingRoot = false
 	local entry = list[index]
@@ -939,31 +1071,31 @@ function onEditEntry(index)
 	render()
 end
 
-function onCancelBookmark()
+function _onCancelBookmark()
 	editingIndex = nil
 	editingRoot = false
 	view = "list"
 	render()
 end
 
-function onGlyphChange(value)
+function _onGlyphChange(value)
 	draftGlyph = value
 	render()
 end
 
-function onLabelChange(value)
+function _onLabelChange(value)
 	draftLabel = value
 end
 
-function onCmdChange(value)
+function _onCmdChange(value)
 	draftCmd = value
 end
 
-function onDescriptionChange(value)
+function _onDescriptionChange(value)
 	draftDescription = value
 end
 
-function onRunInBackgroundChange(value)
+function _onRunInBackgroundChange(value)
 	-- Discard any UI objects or strings gracefully back into native booleans
 	draftRunInBackground = parseBool(value)
 	-- Mutually exclusive with "run in terminal": enabling one turns the
@@ -975,7 +1107,7 @@ function onRunInBackgroundChange(value)
 	render()
 end
 
-function onRunInTerminalChange(value)
+function _onRunInTerminalChange(value)
 	-- Discard any UI objects or strings gracefully back into native booleans
 	draftRunInTerminal = parseBool(value)
 	if draftRunInTerminal then
@@ -984,7 +1116,7 @@ function onRunInTerminalChange(value)
 	render()
 end
 
-function onSaveBookmark()
+function _onSaveBookmark()
 	local label = noctalia.string.trim(draftLabel)
 	local glyph = noctalia.string.trim(draftGlyph)
 	local isFolder = draftKind == "folder"
@@ -1061,18 +1193,18 @@ function onSaveBookmark()
 	render()
 end
 
-function onToggleEditMode()
+function _onToggleEditMode()
 	editMode = not editMode
 	render()
 end
 
-function onSearchChanged(value)
+function _onSearchChanged(value)
 	searchQuery = value
 	selectedIndex = 1
 	render()
 end
 
-function onSearchSubmit()
+function _onSearchSubmit()
 	local rows = visibleRows()
 	activateRow(rows[selectedIndex] or rows[1])
 end
@@ -1081,14 +1213,53 @@ end
 -- `payload` is the dragged row's original index (string, from
 -- ui.dragSource); `target` is "before|N" or "after|N" from the drop
 -- zone's `value`, N being the anchor row's index at render time.
-function onReorderEntry(payload, target)
+function _onReorderEntry(payload, target)
 	local fromIndex = tonumber(payload)
-	local place, anchorText = target:match("^([^|]+)|(.+)$")
-	local anchorIndex = tonumber(anchorText)
-	if fromIndex == nil or anchorIndex == nil then
+	if fromIndex == nil then
+		return
+	end
+	local place, rest = target:match("^([^|]+)|(.+)$")
+	if place == nil then
 		return
 	end
 
+	-- "into|<folderIndex>": drop a bookmark from the root list onto a
+	-- folder row to file it inside, appended at the end of that folder's
+	-- items. Root-only (folders are only ever dragged/dropped at root).
+	if place == "into" then
+		if currentFolder ~= nil then
+			return
+		end
+		local folderIndex = tonumber(rest)
+		if folderIndex == nil then
+			return
+		end
+		local folder = bookmarks[folderIndex]
+		if folder == nil or entryType(folder) ~= "folder" then
+			return
+		end
+		folder.items = folder.items or {}
+		moveEntryAcross(bookmarks, fromIndex, folder.items)
+		render()
+		return
+	end
+
+	-- "out|root": drop a bookmark from inside the open folder back onto
+	-- root, appended at the end. Only meaningful while a folder is open.
+	if place == "out" then
+		if currentFolder == nil then
+			return
+		end
+		local list = activeList()
+		moveEntryAcross(list, fromIndex, bookmarks)
+		render()
+		return
+	end
+
+	local anchorIndex = tonumber(rest)
+	if anchorIndex == nil then
+		return
+	end
 	local beforeIndex = anchorIndex
 	if place == "after" then
 		beforeIndex = anchorIndex + 1
@@ -1099,7 +1270,7 @@ function onReorderEntry(payload, target)
 	render()
 end
 
-function onDeleteEntry(index)
+function _onDeleteEntry(index)
 	local list = activeList()
 	local entry = list[index]
 	if entry == nil then
