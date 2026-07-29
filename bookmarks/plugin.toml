@@ -7,7 +7,7 @@ license      = "MIT"
 icon         = "bookmark"
 description  = "A user-defined list of bookmarks. Each item has a label, a glyph, and a shell command."
 tags         = ["launcher", "panel", "productivity", "utility"]
-dependencies = []
+dependencies = ["nohup"]
 
 [[setting]]
 key             = "data_path"
