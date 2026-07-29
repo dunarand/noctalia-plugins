@@ -452,7 +452,7 @@ local function entryRow(entry, index)
 				controlSize = "sm",
 				tooltip = noctalia.tr("edit_tooltip"),
 				onClick = function()
-					onEditEntry(index)
+					_onEditEntry(index)
 				end,
 			}),
 			ui.button({
@@ -461,29 +461,10 @@ local function entryRow(entry, index)
 				controlSize = "sm",
 				tooltip = noctalia.tr("delete_tooltip"),
 				onClick = function()
-					onDeleteEntry(index)
+					_onDeleteEntry(index)
 				end,
 			}),
 		}
-	end
-
-	local rowChildren = {}
-	if editMode then
-		table.insert(
-			rowChildren,
-			ui.dragSource({
-				key = "grip-" .. index,
-				dragType = "bookmark-entry",
-				payload = tostring(index),
-				previewAncestor = 1,
-				liftFromLayout = true,
-				tooltip = noctalia.tr("drag_tooltip"),
-				width = 16,
-				height = 16,
-			}, {
-				ui.glyph({ name = "grip-vertical", size = 14, color = "on_surface_variant" }),
-			})
-		)
 	end
 
 	local isSelected = selectedIndex == index
@@ -496,6 +477,7 @@ local function entryRow(entry, index)
 			panel.close()
 		end
 	end
+
 	-- In edit mode a folder's glyph sits in a filled chip rather than bare,
 	-- the same visual language as the move-to-root drop bar (filled
 	-- primary/border), so "this accepts a dropped bookmark" reads at a
@@ -521,42 +503,64 @@ local function entryRow(entry, index)
 		}, { folderGlyph })
 	end
 
+	-- Flat, single-level row: grip, glyph, label, and trailing controls are
+	-- all direct children of "bm-<index>", the same node that sits as a
+	-- sibling of the insertion gaps in the `rows` array built by listView.
+	-- This matters for previewAncestor/liftFromLayout below - they walk up
+	-- from the dragSource by ancestor count, so the drag source needs to be
+	-- exactly one level under the node that's actually a gap's neighbor in
+	-- the list. An earlier version wrapped glyph+label in their own nested
+	-- sub-row; liftFromLayout then only collapsed that inner wrapper while
+	-- the outer list-item row (the real gap sibling) stayed in layout as a
+	-- leftover sliver next to the real gap - reading as two highlightable
+	-- spaces where the dragged row used to be instead of one.
+	local rowChildren = {}
+	if editMode then
+		table.insert(
+			rowChildren,
+			ui.dragSource({
+				key = "grip-" .. index,
+				dragType = "bookmark-entry",
+				payload = tostring(index),
+				previewAncestor = 1,
+				liftFromLayout = true,
+				tooltip = noctalia.tr("drag_tooltip"),
+				width = 16,
+				height = 16,
+			}, {
+				ui.glyph({ name = "grip-vertical", size = 14, color = "on_surface_variant" }),
+			})
+		)
+	end
+	table.insert(rowChildren, folderGlyph)
 	table.insert(
 		rowChildren,
-		ui.row({
-			key = "bm-main-" .. index,
-			gap = 8,
-			align = "center",
+		ui.label({
+			text = entry.label or "",
+			fontSize = 13,
+			color = isSelected and "primary" or "on_surface",
+			fontWeight = isSelected and "bold" or "regular",
 			flexGrow = 1,
-			height = 30,
-			tooltip = (not isFolder) and entry.cmd
-				or (editMode and noctalia.tr("drop_into_folder_tooltip") or nil),
-			onClick = activateEntry,
-			onHover = function(state)
-				if state == "true" then
-					selectedIndex = index
-					render()
-				end
-			end,
-		}, {
-			folderGlyph,
-			ui.label({
-				text = entry.label or "",
-				fontSize = 13,
-				color = isSelected and "primary" or "on_surface",
-				fontWeight = isSelected and "bold" or "regular",
-				flexGrow = 1,
-				maxLines = 1,
-			}),
+			maxLines = 1,
 		})
 	)
-
 	for _, node in ipairs(trailing) do
 		table.insert(rowChildren, node)
 	end
 
-	local row =
-		ui.row({ key = "bm-" .. index, gap = 8, align = "center", height = 30 }, rowChildren)
+	local row = ui.row({
+		key = "bm-" .. index,
+		gap = 8,
+		align = "center",
+		height = 30,
+		onClick = activateEntry,
+		onHover = function(state)
+			if state == "true" then
+				selectedIndex = index
+				render()
+			end
+		end,
+	}, rowChildren)
 
 	-- Only root-level folders accept drops (nesting stays one level deep,
 	-- and folders never contain other folders), and only while edit mode
@@ -1054,7 +1058,7 @@ function _onDeleteFolder()
 	render()
 end
 
-function onEditEntry(index)
+function _onEditEntry(index)
 	local list = activeList()
 	editingRoot = false
 	local entry = list[index]
@@ -1277,7 +1281,7 @@ function _onReorderEntry(payload, target)
 	render()
 end
 
-function onDeleteEntry(index)
+function _onDeleteEntry(index)
 	local list = activeList()
 	local entry = list[index]
 	if entry == nil then
