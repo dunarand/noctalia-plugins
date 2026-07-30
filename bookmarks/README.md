@@ -18,6 +18,32 @@ and a shell command to execute. You can backup your bookmarks as well!
 - Noctalia v5.0.0 or higher
 - `nohup` (Optional): For "Run in background" wrapper toggle
 
+## IPC & Keybinds
+
+1. Open the bookmarks panel:
+
+   ```sh
+   noctalia msg panel-toggle dunarand/bookmarks:panel
+   ```
+
+2. Open the bookmarks panel in search mode (immediately puts you into search mode) so that you can
+   use your bookmarks panel as a launcher:
+
+   ```sh
+   noctalia msg panel-toggle dunarand/bookmarks:panel search
+   ```
+
+You can interact with the bookmarks list via keybinds:
+
+| Keybind                   | Purpose                                                          |
+| ------------------------- | ---------------------------------------------------------------- |
+| `CTRL + J` or Down Arrow  | Select the next (below) item                                     |
+| `CTRL + K` or Up Arrow    | Select the previous (above) item                                 |
+| `CTRL + H` or Left Arrow  | Return to the root level when in a folder                        |
+| `CTRL + L` or Right Arrow | Get into a folder                                                |
+| `CTRL + S`                | Search bookmarks                                                 |
+| `Enter` / `Return`        | Execute the selected bookmark's command / Navigate into a folder |
+
 ## Usage
 
 The plugin ships a bar widget, a panel, and a launcher provider. The bar widget just launches the
@@ -71,10 +97,71 @@ hl.bind(
   - Queries are folder-aware, meaning if you nested a bookmark inside a folder, the folder name will
     be displayed as well.
 
+## Bookmarks Data
+
 The saved bookmarks are written to `$NOCTALIA_STATE_HOME/plugins/data/dunarand/bookmarks/data.json`.
 By default, `$NOCTALIA_STATE_HOME` should point to `~/.local/state/noctalia`. You can point to a
 different location for saving and backing up your bookmarks. This setting is configurable via
 **plugin settings** under Settings -> Plugins. Only JSON format is accepted.
+
+You can manage the bookmark data via external scripts.
+
+**Root**
+
+```
+[ <entry>, <entry>]
+```
+
+The root is a JSON array of entries. Order in the array is display order (used directly by drag-and
+drop reordering).
+
+**Entry**
+
+Two types of entries exist: `bookmark` and `folder`.
+
+### Bookmarks
+
+```JSON
+{
+  "type": "bookmark",
+  "glyph": "bookmark",
+  "label": "My Bookmark",
+  "cmd": "firefox",
+  "description": "Opens Firefox",
+  "runInBackground": false,
+  "runInTerminal": false
+}
+```
+
+| Key                                               | Type    | Required / Default                          | Notes                                           |
+| ------------------------------------------------- | ------- | ------------------------------------------- | ----------------------------------------------- |
+| `type`                                            | string  | `"bookmark"`                                |                                                 |
+| `glyph`                                           | string  | falls back to `"bookmark"` if empty/missing |                                                 |
+| `label`                                           | string  | required, enforced at save time             | `""` fails validation                           |
+| `cmd`                                             | string  | required for bookmarks                      | shell command to execute, enforced at save time |
+| `description`                                     | string  | optional, defaults to `""`                  | shown in the info tooltip if enabled            |
+| `runInBackground`                                 | boolean | optional, defaults to `false`               | mutually exclusive with `runInTerminal` in      |
+| the UI but the schema itself doesn't enforce that |
+| `runInTerminal`                                   | boolean | optional, defaults to `false`               |
+
+### Folders
+
+```JSON
+{
+  "type": "folder",
+  "glyph": "folder",
+  "label": "My Folder",
+  "items": [ <bookmark>, <bookmark>, ... ]
+}
+```
+
+| Key                                  | Type   | Required/Default                                                        | Notes      |
+| ------------------------------------ | ------ | ----------------------------------------------------------------------- | ---------- |
+| `type`                               | string | `"folder"`                                                              |
+| `glyph`                              | string | falls back to `"folder"` if empty/missing                               |
+| `label`                              | string | required                                                                |
+| `items`                              | array  | optional, treated as `{}` if missing, `folder.items=folder.items or {}` | contents — |
+| bookmarks only, one level of nesting |
 
 ## Settings
 
@@ -94,29 +181,3 @@ The plugin itself has the following settings:
 | `show_info_button`   | `bool`   | `true`      | Shows the "?" tooltip button on the bookmark entries.                                 |
 | `enable_bk_provider` | `bool`   | `true`      | Enable bookmarks launcher provider                                                    |
 | `bk_sort_by`         | `select` | `"history"` | Provider's sorting strategy. Options: `"history"`, `"usage_count"`                    |
-
-## IPC & Keybinds
-
-1. Open the bookmarks panel:
-
-   ```sh
-   noctalia msg panel-toggle dunarand/bookmarks:panel
-   ```
-
-2. Open the bookmarks panel in search mode (immediately puts you into search mode) so that you can
-   use your bookmarks panel as a launcher:
-
-   ```sh
-   noctalia msg panel-toggle dunarand/bookmarks:panel search
-   ```
-
-You can interact with the bookmarks list via keybinds:
-
-| Keybind                   | Purpose                                                          |
-| ------------------------- | ---------------------------------------------------------------- |
-| `CTRL + J` or Down Arrow  | Select the next (below) item                                     |
-| `CTRL + K` or Up Arrow    | Select the previous (above) item                                 |
-| `CTRL + H` or Left Arrow  | Return to the root level when in a folder                        |
-| `CTRL + L` or Right Arrow | Get into a folder                                                |
-| `CTRL + S`                | Search bookmarks                                                 |
-| `Enter` / `Return`        | Execute the selected bookmark's command / Navigate into a folder |
