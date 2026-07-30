@@ -77,7 +77,7 @@ entry                    = "bk_provider.luau"
 prefix                   = "bk"
 glyph                    = "bookmark"
 include_in_global_search = false
-debounce_ms              = 0
+debounce_ms              = 100
 
 
 [[panel]]

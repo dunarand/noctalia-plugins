@@ -123,87 +123,70 @@ local function statsPath()
 	return dataDir .. (sortBy() == "history" and "/bk_history.json" or "/bk_usage.json")
 end
 
--- Score used to order results when the query is empty. History ranks by
--- recency (higher = more recently used); usage_count ranks by frequency
--- (higher = used more often). Both fall back to 0 (unranked, sorted last)
--- when no stats file exists yet.
-local function getSortScore(id)
-	if id == "" then
-		return 0
-	end
-
+-- Reads and decodes the current stats file (history array or usage-count
+-- map, per sortBy()), falling back to an empty table when the file is
+-- missing, unreadable, or corrupt. Shared by getSortScores/recordActivation
+-- so the read/decode/default boilerplate only lives in one place.
+local function readStatsData()
 	local path = statsPath()
 	if path == nil then
-		return 0
+		return {}, nil
 	end
 	local file = noctalia.readFile(path)
 	if file == nil then
-		return 0
+		return {}, path
 	end
+	local decoded = noctalia.json.decode(file)
+	if type(decoded) ~= "table" then
+		return {}, path
+	end
+	return decoded, path
+end
+
+-- Scores used to order results when the query is empty, keyed by result id.
+-- History ranks by recency (higher = more recently used); usage_count ranks
+-- by frequency (higher = used more often). Reads/decodes the stats file
+-- once for the whole batch rather than once per result. Ids missing from
+-- the stats file fall back to 0 (unranked, sorted last).
+local function getSortScores(ids)
+	local data = readStatsData()
+	local scores = {}
 
 	if sortBy() == "history" then
-		local data = noctalia.json.decode(file)
-		if type(data) ~= "table" then
-			return 0
+		for _, id in ipairs(ids) do
+			local i = table.find(data, id)
+			scores[id] = i ~= nil and (#data - i) or 0
 		end
-		local i = table.find(data, id)
-		if i == nil then
-			return 0
-		end
-		return #data - i
 	else
-		local data = noctalia.json.decode(file)
-		if type(data) ~= "table" then
-			return 0
+		for _, id in ipairs(ids) do
+			scores[id] = data[id] or 0
 		end
-		return data[id] or 0
 	end
+
+	return scores
 end
 
 -- Records an activation for ranking purposes: pushes `id` to the front of
 -- the history list, or increments its usage count, depending on `sort_by`.
 local function recordActivation(id)
-	local path = statsPath()
+	local data, path = readStatsData()
 	if path == nil then
 		return
 	end
 
 	if sortBy() == "history" then
-		local file = noctalia.readFile(path)
-		local data = {}
-		if file ~= nil then
-			local decoded = noctalia.json.decode(file)
-			if type(decoded) == "table" then
-				data = decoded
-			end
-		end
-
 		local i = table.find(data, id)
 		if i ~= nil then
 			table.remove(data, i)
 		end
 		table.insert(data, 1, id)
-
-		local encoded = noctalia.json.encode(data)
-		if encoded ~= nil then
-			noctalia.writeFile(path, encoded)
-		end
 	else
-		local file = noctalia.readFile(path)
-		local data = {}
-		if file ~= nil then
-			local decoded = noctalia.json.decode(file)
-			if type(decoded) == "table" then
-				data = decoded
-			end
-		end
-
 		data[id] = (data[id] or 0) + 1
+	end
 
-		local encoded = noctalia.json.encode(data)
-		if encoded ~= nil then
-			noctalia.writeFile(path, encoded)
-		end
+	local encoded = noctalia.json.encode(data)
+	if encoded ~= nil then
+		noctalia.writeFile(path, encoded)
 	end
 end
 
@@ -218,8 +201,13 @@ function onQuery(query)
 	local results = buildResults(query)
 
 	if query == "" then
+		local ids = {}
 		for _, result in ipairs(results) do
-			result.score = getSortScore(result.id)
+			table.insert(ids, result.id)
+		end
+		local scores = getSortScores(ids)
+		for _, result in ipairs(results) do
+			result.score = scores[result.id] or 0
 		end
 		table.sort(results, function(a, b)
 			return (a.score or 0) > (b.score or 0)
