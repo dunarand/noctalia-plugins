@@ -61,6 +61,14 @@
     "show_info_button": {
       "label": "Bilgi butonunu göster",
       "description": "Yer imlerinde (klasörlerde değil) üzerine gelindiğinde açıklamalarını ve komutlarını görüntülemek için bir \"?\" düğmesi göster."
+    },
+    "bk_sort_by": {
+      "label": "/bk sıralama önceliği",
+      "description": "\"/bk\" sonuçlarının arama yapılmadığı durumda yer imlerini nasıl sıralacağını belirler.",
+      "options": {
+        "history": "Son kullanılanlar",
+        "usage_count": "En sık kullanılanlar"
+      }
     }
   }
 }
