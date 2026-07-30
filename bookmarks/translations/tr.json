@@ -19,13 +19,13 @@
   "hide_controls_tooltip": "Sıralama/düzenleme/silme kontrollerini gizle",
   "cancel_button": "İptal",
   "save_button": "Kaydet",
-  "glyph_field": "Sembol (ör. bookmark)",
+  "glyph_field": "Simge (ör. bookmark)",
   "label_field": "İsim etiketi",
   "cmd_field": "Shell Komutu",
   "description_field": "Açıklama (İsteğe bağlı)",
   "info_cmd_line": "Komut: {cmd}",
   "info_description_line": "Açıklama: {description}",
-  "run_in_background_field": "Arkaplanda çalıştır",
+  "run_in_background_field": "Arka planda çalıştır",
   "run_in_terminal_field": "Konsolda çalıştır",
   "err_read_failed": "Yer imleri okunamadı: {error}",
   "err_corrupt": "Bozuk yer imleri dosyası: {error}",
@@ -38,21 +38,21 @@
   "err_save_failed": "Kaydedilemedi: {error}",
   "err_label_required": "Etiket gerekli",
   "err_label_cmd_required": "Etiket ve komut alanları gerekli",
-  "folder_deleted": "\"{label}\" dosyası ve içeriği silindi",
+  "folder_deleted": "\"{label}\" klasörü ve içeriği silindi",
   "entry_updated": "\"{label}\" güncellendi",
   "entry_saved": "\"{label}\" kaydedildi",
   "settings": {
     "glyph": {
-      "label": "Sembol",
-      "description": "Bar aracının sembolü (ör. bookmark)"
+      "label": "Simge",
+      "description": "Çubuk aracının simgesi (ör. bookmark)"
     },
     "tooltip": {
       "label": "İsim etiketi",
-      "description": "Bar aracının isim etiketi"
+      "description": "Çubuk aracının isim etiketi"
     },
     "text": {
       "label": "Yazı",
-      "description": "Bar aracının etiketi. Barda sadece sembolün görünmesi için boş bırakın."
+      "description": "Çubuk aracının etiketi. Çubukta sadece simgenin görünmesi için boş bırakın."
     },
     "data_path": {
       "label": "Veri dosyası",
