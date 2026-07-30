@@ -1355,6 +1355,13 @@ function onKey(chord, pressed)
 		return
 	end
 
+	if chord == "ctrl+backspace" then
+		if currentFolder ~= nil then
+			_onBackToRoot()
+		end
+		return
+	end
+
 	local rows = visibleRows()
 	local count = #rows
 	if count == 0 then
