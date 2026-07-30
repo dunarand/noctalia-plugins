@@ -1,18 +1,17 @@
 # Bookmarks
 
-A bookmarks/shortcuts plugin for Noctalia. You can add folders and commands to a list of bookmarks.
-Reorder bookmarks, categorize them with folders, set glyphs and labels, and simply left click to
-execute. All of it is user defined, stored in a JSON file you can backup.
+![](./thumbnail.webp)
+
+A user-managed bookmarks plugin for Noctalia. You can add bookmarks by selecting a glyph, a label,
+and a shell command to execute. You can backup your bookmarks as well!
 
 ## Plugin
 
-| Field   | Value                              |
-| ------- | ---------------------------------- |
-| ID      | `dunarand/bookmarks`               |
-| Entries | Bar widget: `bar`; panel: `panel`; |
-
-Bar widget `bar` is not required. Instead, you can assign a keybind to directly open the `panel`,
-which is shown in the Usage section.
+| Field           | Value                                                             |
+| --------------- | ----------------------------------------------------------------- |
+| ID              | `dunarand/bookmarks`                                              |
+| Entries         | Bar widget: `bar`; panel: `panel`; Launcher provider: `provider`; |
+| Launcher Prefix | `/bk`                                                             |
 
 ## Requirements
 
@@ -21,8 +20,9 @@ which is shown in the Usage section.
 
 ## Usage
 
-You can add the widget to your bar or assign the following command to your compositor keybinds. For
-example, in Hyprland v0.55+
+The plugin ships a bar widget, a panel, and a launcher provider. The bar widget just launches the
+panel. The panel is able to be toggled via IPC. For example, in Hyprland v0.55 or higher, you can
+assign it to a keybind as follows:
 
 ```
 hl.bind(
@@ -31,27 +31,14 @@ hl.bind(
 )
 ```
 
-You can interact with the bookmarks list via keybinds:
-
-| Keybind                  | Purpose                                                          |
-| ------------------------ | ---------------------------------------------------------------- |
-| `CTRL + N` or Down Arrow | Select the next (below) item                                     |
-| `CTRL + P` or Up Arrow   | Select the previous (above) item                                 |
-| `CTRL + S`               | Search bookmarks                                                 |
-| `Enter` / `Return`       | Execute the selected bookmark's command / Navigate into a folder |
-
 - Bookmarks and folders are listed in the main panel.
 
   ![](./assets/preview-1.png)
 
-- "?" button shows tooltips: bookmark command and its description.
-
-  ![](./assets/preview-2.png)
-
 - You can create or edit bookmarks by assigning them a glyph, a label, a command, and an
   optional description.
 
-  ![](./assets/preview-3.png)
+  ![](./assets/preview-2.png)
 
   - "Run in background" toggle wraps the command you defined in the following way:
 
@@ -70,18 +57,19 @@ You can interact with the bookmarks list via keybinds:
 
 - You can create folders and nest other bookmarks within folders.
 
-  ![](./assets/preview-4.png)
-
   Folders cannot nest other folders. This is by design and it'll not change unless I find a
-  genuine usecase. You can edit folders by clicking on the "pen" icon next to its name.
+  genuine use case. You can edit folders by clicking on the "pen" icon next to its name.
 
 - You can press the "eye" icon to enter edit mode where you can edit, delete, and reorder bookmarks.
+  This is a setting that you can disable.
 
-  ![](./assets/preview-5.png)
+  ![](./assets/preview-3.png)
 
-- Each bookmark can be edited anytime.
+- You can also use your launcher to query your bookmarks with the `/bk` prefix.
 
-  ![](./assets/preview-6.png)
+  ![](./assets/preview-4.png)
+  - Queries are folder-aware, meaning if you nested a bookmark inside a folder, the folder name will
+    be displayed as well.
 
 The saved bookmarks are written to `$NOCTALIA_STATE_HOME/plugins/data/dunarand/bookmarks/data.json`.
 By default, `$NOCTALIA_STATE_HOME` should point to `~/.local/state/noctalia`. You can point to a
@@ -100,12 +88,14 @@ The bar widget has the following settings:
 
 The plugin itself has the following settings:
 
-| Setting            | Type   | Default | Description                                                                           |
-| ------------------ | ------ | ------- | ------------------------------------------------------------------------------------- |
-| `data_path`        | `file` |         | data.json file to store the saved bookmarks. Leave empty to use the default location. |
-| `show_info_button` | `bool` | `true`  | Shows the "?" tooltip button on the bookmark entries.                                 |
+| Setting              | Type     | Default     | Description                                                                           |
+| -------------------- | -------- | ----------- | ------------------------------------------------------------------------------------- |
+| `data_path`          | `file`   |             | data.json file to store the saved bookmarks. Leave empty to use the default location. |
+| `show_info_button`   | `bool`   | `true`      | Shows the "?" tooltip button on the bookmark entries.                                 |
+| `enable_bk_provider` | `bool`   | `true`      | Enable bookmarks launcher provider                                                    |
+| `bk_sort_by`         | `select` | `"history"` | Provider's sorting strategy. Options: `"history"`, `"usage_count"`                    |
 
-## IPC
+## IPC & Keybinds
 
 1. Open the bookmarks panel:
 
@@ -119,3 +109,14 @@ The plugin itself has the following settings:
    ```sh
    noctalia msg panel-toggle dunarand/bookmarks:panel search
    ```
+
+You can interact with the bookmarks list via keybinds:
+
+| Keybind                   | Purpose                                                          |
+| ------------------------- | ---------------------------------------------------------------- |
+| `CTRL + J` or Down Arrow  | Select the next (below) item                                     |
+| `CTRL + K` or Up Arrow    | Select the previous (above) item                                 |
+| `CTRL + H` or Left Arrow  | Return to the root level when in a folder                        |
+| `CTRL + L` or Right Arrow | Get into a folder                                                |
+| `CTRL + S`                | Search bookmarks                                                 |
+| `Enter` / `Return`        | Execute the selected bookmark's command / Navigate into a folder |
