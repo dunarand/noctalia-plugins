@@ -1394,7 +1394,7 @@ function onKey(chord, pressed)
 				_onOpenFolder(row.index)
 			end
 		end
-	elseif chord == "Return" then
+	elseif chord == "return" then
 		local row = rows[selectedIndex]
 		activateRow(row)
 	end
